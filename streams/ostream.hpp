@@ -26,14 +26,7 @@ namespace streams {
         Ostream(Ostream&&) = delete;
         Ostream& operator=(const Ostream&) = delete;
         Ostream& operator=(Ostream&&) = delete;
-        virtual ~Ostream()
-        {
-            try {
-                flush();
-            } catch (...) {
-                //Don't let exceptions escape dtors!
-            }
-        }
+        virtual ~Ostream() {} /*{ final_flush(); }*/
 
         size_t write(gsl::span<const gsl::byte> s) { return _write(s); }
 
@@ -51,6 +44,17 @@ namespace streams {
         }
 
         //tell and seek?
+    protected:
+        //For subclasses that need to do a flush in their dtor.
+        void final_flush() noexcept
+        {
+            try {
+                flush();
+            } catch (...) {
+                //Swallow all exceptions.
+            }
+        }
+
     private:
         virtual size_t _write(gsl::span<const gsl::byte> s) = 0;
         virtual void _flush() {}
@@ -78,14 +82,13 @@ namespace streams {
     public:
         explicit Buffered_ostream(Ostream& os, size_t size = 1024):
             _stream(os)
-        {
-            _buffer.reserve(size);
-        }
+        { _buffer.reserve(size); }
+
+        ~Buffered_ostream() { final_flush(); }
 
     private:
         size_t _write(gsl::span<const gsl::byte> s) override
         {
-            //TODO: Error/exception handling
             auto total = s.size();
             auto available = _buffer.capacity() - _buffer.size();
             while (s.size() > available) {
@@ -102,12 +105,11 @@ namespace streams {
 
         void _flush() override
         {
-            //TODO: Error/exception handling
             if (!_buffer.empty()) {
                 _stream.write(_buffer);
-                _stream.flush();
                 _buffer.clear();
             }
+            _stream.flush();
         }
 
         Ostream& _stream;
@@ -180,7 +182,11 @@ namespace streams {
 
     private:
         struct Closer {
-            void operator()(std::FILE* f) { std::fclose(f); }
+            void operator()(std::FILE* f)
+            {
+                std::fflush(f);
+                std::fclose(f);
+            }
         };
 
         std::unique_ptr<std::FILE, Closer> _fp;
@@ -200,7 +206,11 @@ namespace streams {
 
     private:
         struct Closer {
-            void operator()(std::FILE* f) { pclose(f); }
+            void operator()(std::FILE* f)
+            {
+                fflush(f);
+                pclose(f);
+            }
         };
 
         std::unique_ptr<std::FILE, Closer> _fp;
