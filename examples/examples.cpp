@@ -82,11 +82,7 @@ int main()
     {
         streams::File_istream fis("out.txt");
         auto line = fis.getline();
-        if (line) {
-            streams::print(streams::stdouts, "{}\n", *line);
-        } else {
-            streams::prints(streams::stdouts, "No line.\n");
-        }
+        streams::print(streams::stdouts, "{}\n", line.value_or("No line."));
     }
 
     //Creating a transformation ostream:

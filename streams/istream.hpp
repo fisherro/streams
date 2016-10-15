@@ -2,15 +2,13 @@
 #include <experimental/optional>
 #include "streams_common.hpp"
 #include <type_safe/types.hpp>
+#include <type_safe/optional.hpp>
 
-//TODO: Use type_safe::optional
+//TODO: I got this error. I had to #if 0 out the std::hash specialization in
+//type_safe/optional.hpp.
+//type_safe/include/type_safe/optional.hpp:1039:11: error: explicit specialization of non-template class 'hash'
 
 namespace streams {
-    //Import optional into our namespace for convenience.
-    template<typename T>
-    using optional = std::experimental::optional<T>;
-    constexpr std::experimental::nullopt_t nullopt = std::experimental::nullopt;
-
     class Istream {
     public:
         Istream() {}
@@ -23,17 +21,17 @@ namespace streams {
         type_safe::size_t read(gsl::span<gsl::byte> s)
         { return _read(s); }
 
-        optional<gsl::byte> get_byte()
+        type_safe::optional<gsl::byte> get_byte()
         {
             gsl::byte b;
             auto bytes_read = read({&b, 1});
             if (1u == bytes_read) return b;
-            else return nullopt;
+            else return type_safe::nullopt;
         }
 
         //Read binary/unformatted data in host endianess.
         template<typename T>
-        optional<T> get_data()
+        type_safe::optional<T> get_data()
         {
             static_assert(std::is_trivially_copyable<T>::value,
                     "Canot use get_data() on values that are not trivially "
@@ -42,20 +40,20 @@ namespace streams {
             gsl::span<T> s{&t, 1};
             auto bytes_read = read(gsl::as_writeable_bytes(s));
             if (span_size_to_safe_size(s.size_bytes()) == bytes_read) return t;
-            else return nullopt;
+            else return type_safe::nullopt;
         }
 
-        optional<std::string> getline()
+        type_safe::optional<std::string> getline()
         {
             std::string line;
             while (true) {
-                auto c = get_data<char>();
-                if (!c) {
-                    if (line.empty()) return nullopt;
+                auto oc = get_data<char>();
+                if (!oc) {
+                    if (line.empty()) return type_safe::nullopt;
                     else return line;
                 }
-                if ('\n' == c) return line;
-                line += *c;
+                if ('\n' == oc.value()) return line;
+                line += oc.value();
             }
         }
 

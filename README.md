@@ -171,8 +171,8 @@ Istream is the abstract interface for input streams. Like Ostream, it does stric
 Some of its public member functions:
 
 * type\_safe::size\_t read(gsl::span&lt;gsl::byte&gt; s)
-* template&lt;typename T&gt; optional&lt;T&gt; get\_data() //Read binary (unformatted) data in host endianess.
-* optional&lt;std::string&gt; getline() //Read until the first '\n'.
+* template&lt;typename T&gt; type\_safe::optional&lt;T&gt; get\_data() //Read binary (unformatted) data in host endianess.
+* type\_safe::optional&lt;std::string&gt; getline() //Read until the first '\n'.
 
 Its private virtual member function to use when creating new Istreams:
 
