@@ -9,7 +9,6 @@
 #include <fmt/format.h>
 
 //TODO: Remove the unsigned ints? GSL uses ptrdiff_t for size.
-//TODO: Implement a not_negative<int>?
 //TODO: Use foonathan's type_safe library?
 
 namespace streams {
@@ -159,21 +158,24 @@ namespace streams {
     };
 
     //Stdio_ostream
-    //An output stream for interoperability with C stdio.
+    //Base class for Ostreams using C stdio.
+    //
+    //To subclass, use the CRTP:
+    //  class My_subclass: public Stdio_ostream<My_subclass>
+    //Then provide a _file() member function that returns a FILE*.
+    template<typename T>
     class Stdio_ostream: public Ostream {
     public:
-        Stdio_ostream(): _file(nullptr) {}
+        Stdio_ostream() {}
 
-        explicit Stdio_ostream(std::FILE* f): _file(f) {}
+        //I have to make this public?
+        std::FILE* _file() { return static_cast<T*>(this)->_file(); }
 
-    protected:
-        void set_file(std::FILE* f) { _file = f; }
-        
     private:
         size_t _write(gsl::span<const gsl::byte> s) override
         {
-            auto bytes_written = std::fwrite(s.data(), 1, s.size(), _file);
-            if (std::ferror(_file)) {
+            auto bytes_written = std::fwrite(s.data(), 1, s.size(), _file());
+            if (std::ferror(_file())) {
                 throw write_error("Error calling fwrite()");
             }
             return bytes_written;
@@ -181,43 +183,35 @@ namespace streams {
 
         void _flush() override
         {
-            if (0 != std::fflush(_file)) {
+            if (0 != std::fflush(_file())) {
                 throw flush_error("Error calling fflush()");
             }
         }
+    };
 
-        std::FILE* _file;
+    //Simple_stdio_ostream
+    //A simple Stdio_ostream that doesn't own its FILE*.
+    class Simple_stdio_ostream: public Stdio_ostream<Simple_stdio_ostream> {
+    public:
+        explicit Simple_stdio_ostream(std::FILE* f): _f(f) {}
+        std::FILE* _file() { return _f; }
+    private:
+        std::FILE* _f;
     };
 
     //Wrappers for the standard streams:
-    Stdio_ostream stdouts(stdout);
-    Stdio_ostream stderrs(stderr);
+    Simple_stdio_ostream stdouts(stdout);
+    Simple_stdio_ostream stderrs(stderr);
 
     //File_ostream
     //For writing to a file.
-    //
-    //This class is twice the size it needs to be because it has both...
-    //  Stdio_ostream::_file
-    //  File_ostream::_fp
-    //But I'm OK with that. At least for now.
-    //
-    //Maybe use the CRTP to have a compile-time polymorphic function that
-    //Stdio_ostream can use to get the FILE* from its subclasses?
-    class File_ostream: public Stdio_ostream {
+    class File_ostream: public Stdio_ostream<File_ostream> {
     public:
         explicit File_ostream(const std::string& path, bool append = false):
-            _fp(std::fopen(path.c_str(), append? "a": "w"))
-        {
-            if (!_fp) {
-                throw std::system_error(errno, std::system_category());
-            }
-            //The parent class, Stdio_ostream, has a constructor that takes
-            //a FILE*. But we don't open the file until initializing the
-            //unique_ptr, and by that time the parent class has to already
-            //be initialized. So we have to use Stdio_ostream::set_file to
-            //get the FILE* to it.
-            set_file(_fp.get());
-        }
+            _f(std::fopen(path.c_str(), append? "a": "w"))
+        { if (!_f) throw std::system_error(errno, std::system_category()); }
+
+        std::FILE* _file() { return _f.get(); }
 
     private:
         struct Closer {
@@ -228,7 +222,7 @@ namespace streams {
             }
         };
 
-        std::unique_ptr<std::FILE, Closer> _fp;
+        std::unique_ptr<std::FILE, Closer> _f;
     };
 
     //Pipe_ostream
@@ -236,18 +230,14 @@ namespace streams {
     //NOTE: Uses popen(), which is not the safest way to start a subprocess.
     //TODO: Need to conditionally compile this in case popen isn't there.
     //
-    //See note on File_ostream about how this class is twice the size it needs
-    //to be.
-    class Pipe_ostream: public Stdio_ostream {
+    //Could probably refactor a common base class out of this and File_ostream.
+    class Pipe_ostream: public Stdio_ostream<Pipe_ostream> {
     public:
         explicit Pipe_ostream(const std::string& command):
-            _fp(popen(command.c_str(), "w"))
-        {
-            if (!_fp) {
-                throw std::system_error(errno, std::system_category());
-            }
-            set_file(_fp.get());
-        }
+            _f(popen(command.c_str(), "w"))
+        { if (!_f) throw std::system_error(errno, std::system_category()); }
+
+        std::FILE* _file() { return _f.get(); }
 
     private:
         struct Closer {
@@ -258,7 +248,7 @@ namespace streams {
             }
         };
 
-        std::unique_ptr<std::FILE, Closer> _fp;
+        std::unique_ptr<std::FILE, Closer> _f;
     };
 
 #if 0
