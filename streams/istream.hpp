@@ -31,6 +31,9 @@ namespace streams {
         template<typename T>
         optional<T> get_data()
         {
+            static_assert(std::is_trivially_copyable<T>::value,
+                    "Canot use get_data() on values that are not trivially "
+                    "copyable.");
             T t;
             gsl::span<T> s{&t, 1};
             auto bytes_read = read(gsl::as_writeable_bytes(s));
@@ -85,6 +88,11 @@ namespace streams {
     private:
         size_t _read(gsl::span<gsl::byte> s) override
         {
+            //We have to do this static_assert in a function to delay it until
+            //Stdio_istream is a complete type.
+            static_assert(std::is_base_of<Stdio_istream, T>::value,
+                    "Stdio_istream should only be used with classes derived "   
+                    "from itself. See the CRTP.");
             return std::fread(s.data(), 1, s.size(), _file());
         }
     };

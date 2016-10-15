@@ -48,8 +48,9 @@ namespace streams {
         template<typename T>
         void put_data(const T& t)
         {
-            //TODO: Place restrictions on types that can be used?
-            //(via enable_if or static_assert or ...)
+            static_assert(std::is_trivially_copyable<T>::value,
+                    "Cannot use put_data() on values that are not trivially "
+                    "copyable.");
             gsl::span<const T> s{&t, 1};
             write(gsl::as_bytes(s));
         }
@@ -59,6 +60,9 @@ namespace streams {
         void put_data_n(const T& t, size_t n)
         {
             //TODO: Should there be a repeat_n algorithm?
+            static_assert(std::is_trivially_copyable<T>::value,
+                    "Cannot use put_data() on values that are not trivially "
+                    "copyable.");
             for (size_t i = 0; i < n; ++i) put_data(t);
         }
 
@@ -174,6 +178,11 @@ namespace streams {
     private:
         size_t _write(gsl::span<const gsl::byte> s) override
         {
+            //We have to do this static_assert in a function to delay it until
+            //Stdio_ostream is a complete type.
+            static_assert(std::is_base_of<Stdio_ostream, T>::value,
+                    "Stdio_ostream should only be used with classes derived "
+                    "from itself. See the CRTP.");
             auto bytes_written = std::fwrite(s.data(), 1, s.size(), _file());
             if (std::ferror(_file())) {
                 throw write_error("Error calling fwrite()");
