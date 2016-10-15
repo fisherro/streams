@@ -1,6 +1,6 @@
 # streams
 
-Experiments in what I might like a replacement for C++ iostreams to be like.
+Experiments in what I might like a replacement for C++ iostreams to be like. (Also an opportunity to try applying some libraries like the GSL.)
 
 # What is wrong with iostreams?
 
@@ -56,11 +56,23 @@ Is there still a place for a synchronous I/O library? I think there is.
 
 Handling flush for an Ostream subclass is sometimes not straight-forward. Is there a way around that? Should Ostream be a concrete class that delegates write and flush to another class for customization? Would that help?
 
+Are these prototypes the right model for the minimal stream interfaces? I mean, I think functions that read/write a span is the correct choice, but what about returning the number of bytes read/written? Or anything else that would make them better without making them overly complex.
+
+* size\_t Ostream::\_write(gsl::span&lt;const gsl::byte&gt;)
+* size\_t Istream::\_read(gsl::span&lt;gsl::byte&gt; s)
+
 # Implemented thus far...
 
 Also check the examples in the examples directory.
 
-This code depends upon [Microsoft GSL](https://github.com/Microsoft/GSL) and [{fmt}](http://fmtlib.net/latest/index.html). It compiles with Clang in C++14 mode.
+This code depends upon...
+
+* [Microsoft GSL](https://github.com/Microsoft/GSL)
+* [{fmt}](http://fmtlib.net/latest/index.html)
+* [type\_safe](https://github.com/foonathan/type_safe)
+  * ...which depends upon [debug\_assert](https://github.com/foonathan/debug_assert)
+
+It compiles with Clang in C++14 mode.
 
 ## streams::Ostream
 

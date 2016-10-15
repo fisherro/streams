@@ -1,5 +1,9 @@
 #pragma once
 #include <experimental/optional>
+#include "streams_common.hpp"
+#include <type_safe/types.hpp>
+
+//TODO: Use type_safe::optional
 
 namespace streams {
     //Import optional into our namespace for convenience.
@@ -16,18 +20,18 @@ namespace streams {
         Istream& operator=(Istream&&) = delete;
         virtual ~Istream() {}
 
-        size_t read(gsl::span<gsl::byte> s)
+        type_safe::size_t read(gsl::span<gsl::byte> s)
         { return _read(s); }
 
         optional<gsl::byte> get_byte()
         {
             gsl::byte b;
             auto bytes_read = read({&b, 1});
-            if (1 == bytes_read) return b;
+            if (1u == bytes_read) return b;
             else return nullopt;
         }
 
-        //Read binary data in host endianess.
+        //Read binary/unformatted data in host endianess.
         template<typename T>
         optional<T> get_data()
         {
@@ -37,7 +41,7 @@ namespace streams {
             T t;
             gsl::span<T> s{&t, 1};
             auto bytes_read = read(gsl::as_writeable_bytes(s));
-            if (s.size_bytes() == bytes_read) return t;
+            if (span_size_to_safe_size(s.size_bytes()) == bytes_read) return t;
             else return nullopt;
         }
 
@@ -58,8 +62,8 @@ namespace streams {
         //I used this sort of function a lot with std::istream.
         //The current definition of Istream::_read doesn't make it easy and
         //efficitient to implement thought.
-        void ignore_bytes(size_t n)
-        { for (size_t i = 0; i < n; ++i) get_byte(); }
+        void ignore_bytes(type_safe::size_t n)
+        { for (type_safe::size_t i = 0u; i < n; ++i) get_byte(); }
 
         //std::vector<gsl::byte> read_until(byte);
 
@@ -69,7 +73,7 @@ namespace streams {
         
         //tell and seek?
     private:
-        virtual size_t _read(gsl::span<gsl::byte>) = 0;
+        virtual type_safe::size_t _read(gsl::span<gsl::byte>) = 0;
     };
 
     //TODOs
@@ -86,7 +90,7 @@ namespace streams {
         std::FILE* _file() { return static_cast<T*>(this)->_file(); }
 
     private:
-        size_t _read(gsl::span<gsl::byte> s) override
+        type_safe::size_t _read(gsl::span<gsl::byte> s) override
         {
             //We have to do this static_assert in a function to delay it until
             //Stdio_istream is a complete type.

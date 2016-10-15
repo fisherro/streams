@@ -7,9 +7,8 @@
 #include <system_error>
 #include <gsl/gsl>
 #include <fmt/format.h>
-
-//TODO: Remove the unsigned ints? GSL uses ptrdiff_t for size.
-//TODO: Use foonathan's type_safe library?
+#include <type_safe/types.hpp>
+#include "streams_common.hpp"
 
 namespace streams {
     struct flush_error: public std::runtime_error {
@@ -37,14 +36,15 @@ namespace streams {
         Ostream& operator=(Ostream&&) = delete;
         virtual ~Ostream() {}
 
-        size_t write(gsl::span<const gsl::byte> s) { return _write(s); }
+        type_safe::size_t write(gsl::span<const gsl::byte> s)
+        { return _write(s); }
 
         void flush() { _flush(); }
 
         void put_byte(gsl::byte b)
         { write({&b, 1}); }
 
-        //Write some binary data in host endianess.
+        //Write some binary/unformatted data in host endianess.
         template<typename T>
         void put_data(const T& t)
         {
@@ -57,18 +57,18 @@ namespace streams {
 
         //Worth having this? For times when you have to write some padding.
         template<typename T>
-        void put_data_n(const T& t, size_t n)
+        void put_data_n(const T& t, type_safe::size_t n)
         {
             //TODO: Should there be a repeat_n algorithm?
             static_assert(std::is_trivially_copyable<T>::value,
                     "Cannot use put_data() on values that are not trivially "
                     "copyable.");
-            for (size_t i = 0; i < n; ++i) put_data(t);
+            for (type_safe::size_t i = 0U; i < n; ++i) put_data(t);
         }
 
         //tell and seek?
     private:
-        virtual size_t _write(gsl::span<const gsl::byte> s) = 0;
+        virtual type_safe::size_t _write(gsl::span<const gsl::byte> s) = 0;
         virtual void _flush() {}
     };
     
@@ -78,7 +78,8 @@ namespace streams {
     {
         fmt::MemoryWriter w;
         w.write(format, args);
-        gsl::span<const char> s{w.data(), gsl::narrow<gsl::span<const char>::index_type>(w.size())};
+        gsl::span<const char> s{w.data(),
+            gsl::narrow<gsl::span<const char>::index_type>(w.size())};
         os.write(gsl::as_bytes(s));
     }
     FMT_VARIADIC(void, print, streams::Ostream&, fmt::CStringRef);
@@ -93,9 +94,12 @@ namespace streams {
     //Wrap another Ostream and buffer output to it.
     class Buffered_ostream: public Ostream {
     public:
-        explicit Buffered_ostream(Ostream& os, size_t size = 1024):
+        explicit Buffered_ostream(Ostream& os, type_safe::size_t size = 1024U):
             _stream(os)
-        { _buffer.reserve(size); }
+        {
+            _buffer.reserve(
+                    static_cast<decltype(_buffer)::size_type>(size));
+        }
 
         ~Buffered_ostream() { no_throw_flush(); }
 
@@ -123,10 +127,15 @@ namespace streams {
             non_virtual_flush();
         }
 
-        size_t _write(gsl::span<const gsl::byte> s) override
+        type_safe::size_t _write(gsl::span<const gsl::byte> s) override
         {
+            //Since this function ended up mixing signed (gsl::span<>::size())
+            //and unsigned (std::vector<>::size()), it seemed like a good
+            //place to use type_safe types. But I had a hard time getting it
+            //to work. So, I settled for converting the unsigned values to
+            //signed and then converting to type_safe::size_t at the end.
             auto total = s.size();
-            auto available = _buffer.capacity() - _buffer.size();
+            std::ptrdiff_t available = _buffer.capacity() - _buffer.size();
             while (s.size() > available) {
                 auto first = s.first(available);
                 std::copy(first.begin(), first.end(),
@@ -136,7 +145,7 @@ namespace streams {
                 available = _buffer.capacity() - _buffer.size();
             }
             std::copy(s.begin(), s.end(), std::back_inserter(_buffer));
-            return total;
+            return span_size_to_safe_size(total);
         }
 
         Ostream& _stream;
@@ -152,10 +161,10 @@ namespace streams {
         std::string string() { return _string; }
 
     private:
-        size_t _write(gsl::span<const gsl::byte> s) override 
+        type_safe::size_t _write(gsl::span<const gsl::byte> s) override 
         {
             _string.append(reinterpret_cast<const char*>(s.data()), s.size());
-            return s.size();
+            return span_size_to_safe_size(s.size());
         }
 
         std::string _string;
@@ -176,7 +185,7 @@ namespace streams {
         std::FILE* _file() { return static_cast<T*>(this)->_file(); }
 
     private:
-        size_t _write(gsl::span<const gsl::byte> s) override
+        type_safe::size_t _write(gsl::span<const gsl::byte> s) override
         {
             //We have to do this static_assert in a function to delay it until
             //Stdio_ostream is a complete type.

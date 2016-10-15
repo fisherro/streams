@@ -19,7 +19,7 @@ struct Debug_ostream: public streams::Ostream {
     streams::Ostream& _inner_stream;
     Debug_ostream(const std::string& name, streams::Ostream& stream):
         _name(name), _inner_stream(stream) {}
-    size_t _write(gsl::span<const gsl::byte> s) override
+    type_safe::size_t _write(gsl::span<const gsl::byte> s) override
     {
         streams::print(streams::stderrs, "{}: _write({})\n",
                 _name, encode(s));
@@ -66,7 +66,7 @@ int main()
     //Using a buffered output stream:
     {
 #if 1
-        streams::Buffered_ostream bos(streams::stdouts, 10);
+        streams::Buffered_ostream bos(streams::stdouts, 10u);
 #else
         Debug_ostream os2("inner", streams::stdouts);
         streams::Buffered_ostream os1(os2, 10);
@@ -94,7 +94,8 @@ int main()
         struct Shout_ostream: public streams::Ostream {
             Ostream& _stream;
             Shout_ostream(Ostream& s): _stream(s) {}
-            size_t _write(gsl::span<const gsl::byte> before) override
+            type_safe::size_t _write(gsl::span<const gsl::byte> before)
+                override
             {
                 std::vector<gsl::byte> after;
                 after.reserve(before.size());
