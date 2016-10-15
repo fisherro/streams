@@ -68,7 +68,7 @@ Seek and tell are arguably not properties of a stream at all. They are propertie
 
 It is awfully convenient to have seek/tell member functions on the streams even if they are features of the underlying source/sink.
 
-When you have a combined source + sink (e.g. FILE\*) that can be open for both reading and writing at the same time, the current position is sometimes (always) shared between reading and writing. Which messes with trying to keep input and output strictly separated. Is it OK if we don't allow files to be simultaneously open for reading and writing? (I can't think of a time I did that in pratice.)
+When you have a combined source + sink (e.g. FILE\*) that can be open for both reading and writing at the same time, the current position is sometimes (always?) shared between reading and writing. Which messes with trying to keep input and output strictly separated. Is it OK if we don't allow files to be simultaneously open for reading and writing? (I can't think of a time I did that in pratice.)
 
 ## Exceptions
 
@@ -78,7 +78,7 @@ I am using exceptions. A standard library would need to have an option for not u
 
 Handling flush for an Ostream subclass is sometimes not straight-forward. Is there a way around that? Should Ostream be a concrete class that delegates write and flush to another class for customization? Would that help?
 
-Are these prototypes the right model for the minimal stream interfaces? I mean, I think functions that read/write a span is the correct choice, but what about returning the number of bytes read/written? Or anything else that would make them better without making them overly complex.
+Are these prototypes the right model for the extension points? I mean, I think functions that read/write a span is the correct choice, but what about returning the number of bytes read/written? Or anything else that would make them better without making them overly complex.
 
 * size\_t Ostream::\_write(gsl::span&lt;const gsl::byte&gt;)
 * size\_t Istream::\_read(gsl::span&lt;gsl::byte&gt; s)
