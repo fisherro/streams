@@ -9,7 +9,7 @@ I am not a fan of iostreams for the following reasons:
 * The overloading of &lt;&lt; and &gt;&gt; do not seem like an appropriate use of operator overloading.
 * Formatting code using iostreams is much harder to read or write than the equivalent using printf or Python/Ruby/Scheme.
 * It is harder to create your own streams than it should be.
-* No out-of-the-box ability to create a steam from a FILE\*. (Or to get a FILE\* or OS-specific file descriptor/handle from a stream.)
+* No out-of-the-box ability to create a stream from a FILE\*. (Or to get a FILE\* or OS-specific file descriptor/handle from a stream.)
 
 It has also been said that iostream conflates formatting, buffering, and I/O.
 
