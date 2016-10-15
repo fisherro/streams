@@ -75,33 +75,46 @@ namespace streams {
     //Filtered_istream
     //Pipe_istream
 
+    template<typename T>
     class Stdio_istream: public Istream {
-    protected:
-        void set_file(std::FILE* f) { _file = f; }
+    public:
+        Stdio_istream() {}
+
+        std::FILE* _file() { return static_cast<T*>(this)->_file(); }
 
     private:
         size_t _read(gsl::span<gsl::byte> s) override
         {
-            return std::fread(s.data(), 1, s.size(), _file);
+            return std::fread(s.data(), 1, s.size(), _file());
         }
-
-        std::FILE* _file;
     };
 
-    class File_istream: public Stdio_istream {
+    class Simple_stdio_istream: public Stdio_istream<Simple_stdio_istream> {
+    public:
+        explicit Simple_stdio_istream(std::FILE* f): _f(f) {}
+
+        std::FILE* _file() { return _f; }
+
+    private:
+        std::FILE* _f;
+    };
+
+    Simple_stdio_istream stdins(stdin);
+
+    class File_istream: public Stdio_istream<File_istream> {
     public:
         File_istream(const std::string& path):
-            _fp(std::fopen(path.c_str(), "r"))
-        {
-            set_file(_fp.get());
-        }
+            _f(std::fopen(path.c_str(), "r"))
+        { if (!_f) throw std::system_error(errno, std::system_category()); }
+
+        std::FILE* _file() { return _f.get(); }
 
     private:
         struct Closer {
             void operator()(std::FILE* f) { std::fclose(f); }
         };
 
-        std::unique_ptr<FILE, Closer> _fp;
+        std::unique_ptr<FILE, Closer> _f;
     };
 }
 

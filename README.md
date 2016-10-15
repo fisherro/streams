@@ -99,7 +99,11 @@ This class, like std::ostringstream, collects everything written to it in a std:
 
 ## streams::Stdio\_ostream
 
-This class provides an ostream wrapped around a stdio FILE pointer. Just pass its ctor a FILE\*. The Stdio\_ostream does not claim ownership of the FILE\*; you'll have to close it yourself.
+A base class for stdio-based Ostreams.
+
+## streams::Simple\_stdio\_ostream
+
+This class provides an ostream wrapped around a stdio FILE pointer. Just pass its ctor a FILE\*. The Simple\_stdio\_ostream does not claim ownership of the FILE\*; you'll have to close it yourself.
 
 ## streams::stdouts &amp; streams::stderrs
 
