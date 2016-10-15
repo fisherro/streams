@@ -28,7 +28,11 @@ I will only work in terms of char for now. I'm not going to bother templating ev
 
 (Can't we all just agree to use UTF-8 everywhere? _sigh_ I didn't think so.)
 
+Although such issues are mostly/entirely the purview of formatting, and since I'm currently just using {fmt} for output formatting, it already handles this.
+
 # Notes
+
+## Formatting
 
 The [fmt](http://fmtlib.net/latest/index.html) library provides good output formatting. So we use that for output formatting.
 
@@ -38,21 +42,39 @@ Formatting is extended in iostreams by overloading operator&lt;&lt; and operator
 
 (By the way, unlike printf, {fmt} also allows extensibility through user created format options.)
 
+## Multiple inheritance
+
 Can we skip the multiple inheritence of iostreams? Let's keep input streams and output streams separate. Users can use multiple inheritence or composition to combine them if they want.
+
+## Buffering
 
 Can buffering simply be provided by stream compositing?
 
-Does Boost.Iostreams offer us anything?
+## Virtual functions
 
-Virtual functions: I started to use compile-time polymorphism, but I didn't want every function that wanted to take an Ostream& or Istream& parameter to have to be a function. So, I've used run-time polymorphism instead.
+I started to use compile-time polymorphism for Ostream and Istream, but I didn't want every function that wanted to take an Ostream& or Istream& parameter to have to be a function. So, I've used run-time polymorphism instead. (The Stdio\_\*stream class do use compile-time polymorphism.)
+
+## Binary mode &amp; text mode
 
 What about binary versus text mode? That seems like something that should be done by the formatting parts instead of the (binary) stream parts. (I don't use MS Windows, so I'm not worried about it...yet.)
 
-Should seek/tell be part of the stream interfaces? Perhaps seek/tell are operations on an object that can hand out an Ostream or an Istream.
+## Seek &amp; tell
+
+I'm not sure what to do with these yet.
+
+Some streams don't support seeking. I'm thinking I'd like to only have those functions on a stream if they're support rather than have them on base classes but leaving them unimplemented on some leaf classes.
+
+Seek and tell are arguably not properties of a stream at all. They are properties of the underlying data source/sink.
+
+It is awfully convenient to have seek/tell member functions on the streams even if they are features of the underlying source/sink.
+
+When you have a combined source + sink (e.g. FILE\*) that can be open for both reading and writing at the same time, the current position is sometimes (always) shared between reading and writing. Which messes with trying to keep input and output strictly separated. Is it OK if we don't allow files to be simultaneously open for reading and writing? (I can't think of a time I did that in pratice.)
+
+## Exceptions
 
 I am using exceptions. A standard library would need to have an option for not using exceptions. But I want to design for exceptions first.
 
-Is there still a place for a synchronous I/O library? I think there is.
+## Easy extensibility
 
 Handling flush for an Ostream subclass is sometimes not straight-forward. Is there a way around that? Should Ostream be a concrete class that delegates write and flush to another class for customization? Would that help?
 
@@ -60,6 +82,12 @@ Are these prototypes the right model for the minimal stream interfaces? I mean, 
 
 * size\_t Ostream::\_write(gsl::span&lt;const gsl::byte&gt;)
 * size\_t Istream::\_read(gsl::span&lt;gsl::byte&gt; s)
+
+## Misc
+
+Is there still a place for a synchronous I/O library? I think there is.
+
+Does Boost.Iostreams offer us anything? It seems mainly about making it easier to work with std::iostreams.
 
 # Implemented thus far...
 
@@ -80,14 +108,14 @@ This class is the abstract interface for an output stream. Note that it strictly
 
 It has these public member functions:
 
-* size\_t write(gsl::span&lt;const gsl::byte&gt;)
+* type\_safe::size\_t write(gsl::span&lt;const gsl::byte&gt;)
 * void flush()
 * void put\_byte(gsl::byte)
 * template&lt;typename T&gt; void put\_data(const T& t) //Write binary (unformatted) data in host endianess
 
 There are also two private virtual member functions that subclasses can override to create a custom Ostream:
 
-* size\_t \_write(gsl::span&lt;const gsl::byte&gt;)
+* type\_safe::size\_t \_write(gsl::span&lt;const gsl::byte&gt;)
 * void \_flush() //If not overridden, this is a no-op.
 
 ## streams::print
@@ -102,7 +130,11 @@ For example:
 
 ## streams::prints
 
-"streams::prints(the\_stream, the\_string) is a shortcut for streams::print(the\_stream, "{}", the\_string).
+    streams::prints(the_stream, the_string)
+
+...is a shortcut for...
+
+    streams::print(the_stream, "{}", the_string)
 
 ## streams::String\_ostream
 
@@ -117,10 +149,6 @@ A base class for stdio-based Ostreams.
 ## streams::Simple\_stdio\_ostream
 
 This class provides an ostream wrapped around a stdio FILE pointer. Just pass its ctor a FILE\*. The Simple\_stdio\_ostream does not claim ownership of the FILE\*; you'll have to close it yourself.
-
-## streams::stdouts &amp; streams::stderrs
-
-These are Stdio\_ostreams wrapping stdio and stderr.
 
 ## streams::File\_ostream
 
@@ -142,13 +170,31 @@ Istream is the abstract interface for input streams. Like Ostream, it does stric
 
 Some of its public member functions:
 
-* size\_t read(gsl::span&lt;gsl::byte&gt; s)
+* type\_safe::size\_t read(gsl::span&lt;gsl::byte&gt; s)
 * template&lt;typename T&gt; optional&lt;T&gt; get\_data() //Read binary (unformatted) data in host endianess.
 * optional&lt;std::string&gt; getline() //Read until the first '\n'.
 
 Its private virtual member function to use when creating new Istreams:
 
-* size\_t \_read(gsl::span&lt;gsl::byte&gt; s)
+* type\_safe::size\_t \_read(gsl::span&lt;gsl::byte&gt; s)
+
+## streams::Stdio\_istream
+
+The base class for stdio-based istreams.
+
+## streams::Simple\_stdio\_istream
+
+A Stdio\_istream that doesn't claim ownership of its FILE\*.
+
+## streams::File\_istream
+
+For reading from files.
+
+## streams::stdins, streams::stdouts, &amp; streams::stderrs
+
+Istream and ostream wrappers around the stdio standard streams.
+
+Unfortunately, stdin, stdout, and stderr are macros, or I would've just called them streams::stdin, etc. For lack of better names, I just added 's' (for "stream") to the names.
 
 # Possible future classes and functions
 
