@@ -52,6 +52,12 @@ namespace streams {
             }
         }
 
+        //I used this sort of function a lot with std::istream.
+        //The current definition of Istream::_read doesn't make it easy and
+        //efficitient to implement thought.
+        void ignore_bytes(size_t n)
+        { for (size_t i = 0; i < n; ++i) get_byte(); }
+
         //std::vector<gsl::byte> read_until(byte);
 
         //readline?

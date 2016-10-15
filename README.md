@@ -53,7 +53,7 @@ I am using exceptions. A standard library would need to have an option for not u
 
 Is there still a place for a synchronous I/O library? I think there is.
 
-What if Ostream were a concrete class and it delegated to another class instead of using virtual functions? Would that avoid some of the complexity around needing to flush in Ostream dtors?
+Handling flush for an Ostream subclass is sometimes not straight-forward. Is there a way around that? Should Ostream be a concrete class that delegates write and flush to another class for customization? Would that help?
 
 # Implemented thus far...
 
@@ -76,12 +76,6 @@ There are also two private virtual member functions that subclasses can override
 
 * size\_t \_write(gsl::span&lt;const gsl::byte&gt;)
 * void \_flush() //If not overridden, this is a no-op.
-
-There is a protected member function...
-
-* void final\_flush() noexcept
-
-...which will call \_flush() and catch any exceptions. An Ostream subclass should, in some cases, call final\_flush() in its dtor.
 
 ## streams::print
 
