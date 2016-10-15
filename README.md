@@ -52,7 +52,7 @@ Can buffering simply be provided by stream compositing?
 
 ## Virtual functions
 
-I started to use compile-time polymorphism for Ostream and Istream, but I didn't want every function that wanted to take an Ostream& or Istream& parameter to have to be a function. So, I've used run-time polymorphism instead. (The Stdio\_\*stream class do use compile-time polymorphism.)
+I started to use compile-time polymorphism for Ostream and Istream, but I didn't want every function that wanted to take an Ostream& or Istream& parameter to have to be a template. So, I've used run-time polymorphism instead. (The Stdio\_\*stream class do use compile-time polymorphism.)
 
 ## Binary mode &amp; text mode
 
