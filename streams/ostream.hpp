@@ -59,7 +59,6 @@ namespace streams {
         template<typename T>
         void put_data_n(const T& t, type_safe::size_t n)
         {
-            //TODO: Should there be a repeat_n algorithm?
             static_assert(std::is_trivially_copyable<T>::value,
                     "Cannot use put_data() on values that are not trivially "
                     "copyable.");
@@ -95,7 +94,7 @@ namespace streams {
     class Buffered_ostream: public Ostream {
     public:
         explicit Buffered_ostream(Ostream& os, type_safe::size_t size = 1024U):
-            _stream(os)
+            _sink(os)
         {
             _buffer.reserve(
                     static_cast<decltype(_buffer)::size_type>(size));
@@ -109,10 +108,10 @@ namespace streams {
         void non_virtual_flush()
         {
             if (!_buffer.empty()) {
-                _stream.write(_buffer);
+                _sink.write(_buffer);
                 _buffer.clear();
             }
-            _stream.flush();
+            _sink.flush();
         }
 
         //Needed for flushing from dtor.
@@ -148,7 +147,7 @@ namespace streams {
             return span_size_to_safe_size(total);
         }
 
-        Ostream& _stream;
+        Ostream& _sink;
         std::vector<gsl::byte> _buffer;
     };
 

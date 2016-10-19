@@ -190,6 +190,18 @@ A Stdio\_istream that doesn't claim ownership of its FILE\*.
 
 For reading from files.
 
+## streams::Unget\_istream
+
+Wraps another Istream and provides an unget buffer of arbitrary size.
+
+## streams::Buffered\_istream
+
+Wraps another Istream and provides a input buffering.
+
+* explicit Buffered\_istream::Buffered\_istream(Istream& source, type\_safe::size\_t buffer\_size = 1024u);
+
+Note that when the buffer is empty, it will call \_source.read() for the buffer size, which can block until enough data is available. Could be troublesome with interactive or network use.
+
 ## streams::stdins, streams::stdouts, &amp; streams::stderrs
 
 Istream and ostream wrappers around the stdio standard streams.
@@ -202,4 +214,8 @@ Unfortunately, stdin, stdout, and stderr are macros, or I would've just called t
 * Posix\_ostream: A wrapper around a file descriptor.
 * Tcp\_output\_stream
 * Seekable
+
+# To do...
+
+When \_read() doesn't fill the span, the caller will have to subspan it. Maybe \_read() should return the subspan directly.
 

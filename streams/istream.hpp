@@ -1,14 +1,15 @@
 #pragma once
+#include <algorithm>
 #include <experimental/optional>
 #include "streams_common.hpp"
 #include <type_safe/types.hpp>
 #include <type_safe/optional.hpp>
 
-//TODO: I got this error. I had to #if 0 out the std::hash specialization in
-//type_safe/optional.hpp.
-//type_safe/include/type_safe/optional.hpp:1039:11: error: explicit specialization of non-template class 'hash'
-
 namespace streams {
+    struct read_error: public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
     class Istream {
     public:
         Istream() {}
@@ -65,10 +66,6 @@ namespace streams {
 
         //std::vector<gsl::byte> read_until(byte);
 
-        //readline?
-        
-        //unget? Should be done by Buffered_istream?
-        
         //tell and seek?
     private:
         virtual type_safe::size_t _read(gsl::span<gsl::byte>) = 0;
@@ -76,7 +73,6 @@ namespace streams {
 
     //TODOs
     //String_istream
-    //Buffered_istream
     //Filtered_istream
     //Pipe_istream
 
@@ -95,7 +91,11 @@ namespace streams {
             static_assert(std::is_base_of<Stdio_istream, T>::value,
                     "Stdio_istream should only be used with classes derived "   
                     "from itself. See the CRTP.");
-            return std::fread(s.data(), 1, s.size(), _file());
+            auto bytes_read = std::fread(s.data(), 1, s.size(), _file());
+            if (std::ferror(_file())) {
+                throw read_error("Error calling fread()");
+            }
+            return bytes_read;
         }
     };
 
@@ -125,6 +125,83 @@ namespace streams {
         };
 
         std::unique_ptr<FILE, Closer> _f;
+    };
+
+    //Buffered_istream
+    //Add a buffer to an Istream.
+    //Not good for interactive use as it can block waiting to fill up the
+    //buffer.
+    class Buffered_istream: public Istream {
+    public:
+        explicit Buffered_istream(
+                Istream& source, type_safe::size_t buffer_size = 1024u):
+            _source(source), _buffer(static_cast<size_t>(buffer_size)) {}
+
+    private:
+        type_safe::size_t _read(gsl::span<gsl::byte> s) override
+        {
+            if (_eof) return 0u;
+            std::ptrdiff_t bytes_delivered = 0;
+            //While the caller still wants bytes...
+            while (s.size() > 0) {
+                //If the buffer is empty, fill it.
+                if (_available.size() <= 0) {
+                    _available = _buffer;
+                    auto bytes_read = _source.read(_available);
+                    if (bytes_read < static_cast<size_t>(_available.size())) {
+                        _eof = true;
+                    }
+                    _available = _available.first(
+                            safe_size_to_span_size(bytes_read));
+                }
+                //Copy from buffer to caller.
+                auto to_copy = std::min(s.size(), _available.size());
+                std::copy_n(_available.begin(), to_copy, s.begin());
+                _available = _available.subspan(to_copy);
+                s = s.subspan(to_copy);
+                bytes_delivered = to_copy;
+                if (_eof) break;
+            }
+            return span_size_to_safe_size(bytes_delivered);
+        }
+
+        Istream& _source;
+        std::vector<gsl::byte> _buffer;
+        gsl::span<gsl::byte> _available;
+        bool _eof = false;
+    };
+
+    //Unget_istream
+    //Enable arbitrary amounts of unget for any Istream.
+    //The data you unget doesn't even have to be the same as what you read.
+    //You don't even have to have read data previously.
+    class Unget_istream: public Istream {
+    public:
+        explicit Unget_istream(Istream& source): _source(source) {}
+
+        void unget(gsl::span<const gsl::byte> s)
+        { std::copy(s.crbegin(), s.crend(), std::back_inserter(_buffer)); }
+
+    private:
+        type_safe::size_t _read(gsl::span<gsl::byte> s) override
+        {
+            std::ptrdiff_t bytes_given = 0;
+            if (!_buffer.empty()) {
+                std::ptrdiff_t buf_size = _buffer.size();
+                auto to_copy = std::min(s.size(), buf_size);
+                std::copy_n(_buffer.crbegin(), to_copy, s.begin());
+                _buffer.resize(buf_size - to_copy);
+                s = s.subspan(to_copy);
+                bytes_given = to_copy;
+            }
+            if (s.size() > 0) {
+                bytes_given += safe_size_to_span_size(_source.read(s));
+            }
+            return span_size_to_safe_size(bytes_given);
+        }
+
+        Istream& _source;
+        std::vector<gsl::byte> _buffer;
     };
 }
 
