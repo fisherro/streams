@@ -113,7 +113,7 @@ namespace streams {
 
     class File_istream: public Stdio_istream<File_istream> {
     public:
-        File_istream(const std::string& path):
+        explicit File_istream(const std::string& path):
             _f(std::fopen(path.c_str(), "r"))
         { if (!_f) throw std::system_error(errno, std::system_category()); }
 

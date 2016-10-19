@@ -142,25 +142,37 @@ This class, like std::ostringstream, collects everything written to it in a std:
 
 * std::string string();
 
+I think this makes less sense than just calling fmt::format(). But perhaps a Ostream that writes into a std::vector&lt;gsl::byte&gt; makes sense.
+
 ## streams::Stdio\_ostream
 
-A base class for stdio-based Ostreams.
+A base class for stdio-based Ostreams. Subclasses only need to implement...
+
+* std::FILE\* \_file();
 
 ## streams::Simple\_stdio\_ostream
 
 This class provides an ostream wrapped around a stdio FILE pointer. Just pass its ctor a FILE\*. The Simple\_stdio\_ostream does not claim ownership of the FILE\*; you'll have to close it yourself.
 
+* explicit Simple\_stdio\_ostream::Simple\_stdio\_ostream(std::FILE\* f)
+
 ## streams::File\_ostream
 
 This class (a subclass of Stdio\_ostream) will open a file for output. Its dtor will close the file. Just pass the path to the file to its ctor. If you pass _true_ as a second parameter, the file will be opened in append mode.
+
+* explicit File\_ostream::File\_ostream(const std::string& path, bool append = false)
 
 ## streams::Pipe\_ostream
 
 Another subclass of Stdio\_ostream, you give this one a command. It will pass the command to popen and allow you to write to a pipe into that command. Its dtor will pclose the pipe.
 
+* explicit Pipe\_ostream::Pipe\_ostream(const std::string& command)
+
 ## streams::Buffered\_ostream
 
 You construct a Buffered\_ostream with another Ostream and a buffer size. Output will be collected in the buffer until it overflows or flush is called. Then the data will be sent to the other Ostream.
+
+* explicit Buffered\_ostream::Buffered\_ostream(Ostream& os, type\_safe::size\_t size = 1024U)
 
 This is an example of stream composition.
 
@@ -180,19 +192,27 @@ Its private virtual member function to use when creating new Istreams:
 
 ## streams::Stdio\_istream
 
-The base class for stdio-based istreams.
+The base class for stdio-based istreams. Like Stdio\_ostream, subclasses merely implement:
+
+* std::FILE\* \_file()
 
 ## streams::Simple\_stdio\_istream
 
 A Stdio\_istream that doesn't claim ownership of its FILE\*.
 
+* explicit Simple\_stdio\_istream::Simple\_stdio\_istream(std::FILE\* f)
+
 ## streams::File\_istream
 
 For reading from files.
 
+* explicit File\_istream::File\_istream(const std::string& path)
+
 ## streams::Unget\_istream
 
 Wraps another Istream and provides an unget buffer of arbitrary size.
+
+* explicit Unget\_istream::Unget\_istream(Istream& source)
 
 ## streams::Buffered\_istream
 
@@ -218,4 +238,6 @@ Unfortunately, stdin, stdout, and stderr are macros, or I would've just called t
 # To do...
 
 When \_read() doesn't fill the span, the caller will have to subspan it. Maybe \_read() should return the subspan directly.
+
+I'm thinking that Istream::get\_line() should be moved to a free function. Call it input formatting. Also add get\_char() and get\_wchar() functions. Maybe a wchar\_t version of get\_line() too? Similar free functions for put\_char() etc.?
 
