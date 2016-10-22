@@ -2,37 +2,33 @@
 #include <algorithm>
 #include <experimental/optional>
 #include "streams_common.hpp"
-#include <type_safe/types.hpp>
-#include <type_safe/optional.hpp>
 
 namespace streams {
+    template<typename T>
+    using optional = std::experimental::optional<T>;
+    constexpr std::experimental::nullopt_t nullopt = std::experimental::nullopt;
+
     struct read_error: public std::runtime_error {
         using std::runtime_error::runtime_error;
     };
 
-    class Istream {
+    class istream {
     public:
-        Istream() {}
-        Istream(const Istream&) = delete;
-        Istream(Istream&&) = delete;
-        Istream& operator=(const Istream&) = delete;
-        Istream& operator=(Istream&&) = delete;
-        virtual ~Istream() {}
+        istream() {}
+        istream(const istream&) = delete;
+        istream(istream&&) = delete;
+        istream& operator=(const istream&) = delete;
+        istream& operator=(istream&&) = delete;
+        virtual ~istream() {}
 
-        type_safe::size_t read(gsl::span<gsl::byte> s)
+        //Tries to fill the span with bytes.
+        //Returns the subspan that was actually filled.
+        gsl::span<gsl::byte> read(gsl::span<gsl::byte> s)
         { return _read(s); }
-
-        type_safe::optional<gsl::byte> get_byte()
-        {
-            gsl::byte b;
-            auto bytes_read = read({&b, 1});
-            if (1u == bytes_read) return b;
-            else return type_safe::nullopt;
-        }
 
         //Read binary/unformatted data in host endianess.
         template<typename T>
-        type_safe::optional<T> get_data()
+        optional<T> get()
         {
             static_assert(std::is_trivially_copyable<T>::value,
                     "Canot use get_data() on values that are not trivially "
@@ -40,151 +36,110 @@ namespace streams {
             T t;
             gsl::span<T> s{&t, 1};
             auto bytes_read = read(gsl::as_writeable_bytes(s));
-            if (span_size_to_safe_size(s.size_bytes()) == bytes_read) return t;
-            else return type_safe::nullopt;
+            if (bytes_read.size() < sizeof(T)) return nullopt;
+            return t;
         }
 
-        type_safe::optional<std::string> getline()
+        template<typename T>
+        bool get(T& t)
         {
-            std::string line;
+            gsl::span<T> s{&t, 1};
+            auto bytes_read = read(gsl::as_writeable_bytes(s));
+            return bytes_read.size() == sizeof(T);
+        }
+
+        void ignore_bytes(std::ptrdiff_t n)
+        {
+            Expects(n >= 0);
+            for (std::ptrdiff_t i = 0; i < n; ++i) get<gsl::byte>();
+        }
+
+        std::vector<gsl::byte> read_until(const gsl::byte sentinel)
+        {
+            std::vector<gsl::byte> v;
             while (true) {
-                auto oc = get_data<char>();
-                if (!oc) {
-                    if (line.empty()) return type_safe::nullopt;
-                    else return line;
-                }
-                if ('\n' == oc.value()) return line;
-                line += oc.value();
+                auto byte = get<gsl::byte>();
+                if (!byte) return v;
+                v.push_back(*byte);
+                if (sentinel == *byte) return v;
             }
         }
 
-        //I used this sort of function a lot with std::istream.
-        //The current definition of Istream::_read doesn't make it easy and
-        //efficitient to implement thought.
-        void ignore_bytes(type_safe::size_t n)
-        { for (type_safe::size_t i = 0u; i < n; ++i) get_byte(); }
-
-        //std::vector<gsl::byte> read_until(byte);
-
-        //tell and seek?
     private:
-        virtual type_safe::size_t _read(gsl::span<gsl::byte>) = 0;
+        virtual gsl::span<gsl::byte> _read(gsl::span<gsl::byte>) = 0;
     };
 
-    //TODOs
-    //String_istream
-    //Filtered_istream
-    //Pipe_istream
-
-    template<typename T>
-    class Stdio_istream: public Istream {
+    class buf_istream: public istream {
     public:
-        Stdio_istream() {}
-
-        std::FILE* _file() { return static_cast<T*>(this)->_file(); }
+        explicit buf_istream(
+                istream& source, std::ptrdiff_t buffer_size = 1024):
+            _source(source), _buffer(buffer_size) {}
 
     private:
-        type_safe::size_t _read(gsl::span<gsl::byte> s) override
+        gsl::span<gsl::byte> _read(gsl::span<gsl::byte> s) override
         {
-            //We have to do this static_assert in a function to delay it until
-            //Stdio_istream is a complete type.
-            static_assert(std::is_base_of<Stdio_istream, T>::value,
-                    "Stdio_istream should only be used with classes derived "   
-                    "from itself. See the CRTP.");
-            auto bytes_read = std::fread(s.data(), 1, s.size(), _file());
-            if (std::ferror(_file())) {
-                throw read_error("Error calling fread()");
-            }
-            return bytes_read;
-        }
-    };
-
-    class Simple_stdio_istream: public Stdio_istream<Simple_stdio_istream> {
-    public:
-        explicit Simple_stdio_istream(std::FILE* f): _f(f) {}
-
-        std::FILE* _file() { return _f; }
-
-    private:
-        std::FILE* _f;
-    };
-
-    Simple_stdio_istream stdins(stdin);
-
-    class File_istream: public Stdio_istream<File_istream> {
-    public:
-        explicit File_istream(const std::string& path):
-            _f(std::fopen(path.c_str(), "r"))
-        { if (!_f) throw std::system_error(errno, std::system_category()); }
-
-        std::FILE* _file() { return _f.get(); }
-
-    private:
-        struct Closer {
-            void operator()(std::FILE* f) { std::fclose(f); }
-        };
-
-        std::unique_ptr<FILE, Closer> _f;
-    };
-
-    //Buffered_istream
-    //Add a buffer to an Istream.
-    //Not good for interactive use as it can block waiting to fill up the
-    //buffer.
-    class Buffered_istream: public Istream {
-    public:
-        explicit Buffered_istream(
-                Istream& source, type_safe::size_t buffer_size = 1024u):
-            _source(source), _buffer(static_cast<size_t>(buffer_size)) {}
-
-    private:
-        type_safe::size_t _read(gsl::span<gsl::byte> s) override
-        {
-            if (_eof) return 0u;
+            auto original_span = s;
+            if (_eof) return s.first(0);
             std::ptrdiff_t bytes_delivered = 0;
             //While the caller still wants bytes...
             while (s.size() > 0) {
                 //If the buffer is empty, fill it.
                 if (_available.size() <= 0) {
                     _available = _buffer;
-                    auto bytes_read = _source.read(_available);
-                    if (bytes_read < static_cast<size_t>(_available.size())) {
+                    _available = _source.read(_available);
+                    if (_available.size() < _buffer.size()) {
+                        //If we didn't fill the buffer..
                         _eof = true;
                     }
-                    _available = _available.first(
-                            safe_size_to_span_size(bytes_read));
                 }
                 //Copy from buffer to caller.
                 auto to_copy = std::min(s.size(), _available.size());
                 std::copy_n(_available.begin(), to_copy, s.begin());
                 _available = _available.subspan(to_copy);
                 s = s.subspan(to_copy);
-                bytes_delivered = to_copy;
+                bytes_delivered += to_copy;
                 if (_eof) break;
             }
-            return span_size_to_safe_size(bytes_delivered);
+            return original_span.first(bytes_delivered);
         }
 
-        Istream& _source;
+        istream& _source;
         std::vector<gsl::byte> _buffer;
         gsl::span<gsl::byte> _available;
         bool _eof = false;
     };
 
-    //Unget_istream
-    //Enable arbitrary amounts of unget for any Istream.
+    class span_istream: public istream {
+    public:
+        explicit span_istream(gsl::span<const gsl::byte> s): _available(s) {}
+
+    private:
+        gsl::span<gsl::byte> _read(gsl::span<gsl::byte> s) override
+        {
+            auto nbytes = std::min(s.size(), _available.size());
+            std::copy_n(_available.begin(), nbytes, s.begin());
+            _available = _available.subspan(nbytes);
+            return s.first(nbytes);
+        }
+
+        gsl::span<const gsl::byte> _available;
+    };
+
+    //unget_istream
+    //Enable arbitrary amounts of unget for any istream.
     //The data you unget doesn't even have to be the same as what you read.
     //You don't even have to have read data previously.
-    class Unget_istream: public Istream {
+    class unget_istream: public istream {
     public:
-        explicit Unget_istream(Istream& source): _source(source) {}
+        explicit unget_istream(istream& source): _source(source) {}
 
         void unget(gsl::span<const gsl::byte> s)
         { std::copy(s.crbegin(), s.crend(), std::back_inserter(_buffer)); }
 
     private:
-        type_safe::size_t _read(gsl::span<gsl::byte> s) override
+        gsl::span<gsl::byte> _read(gsl::span<gsl::byte> s) override
         {
+            auto original_span = s;
             std::ptrdiff_t bytes_given = 0;
             if (!_buffer.empty()) {
                 std::ptrdiff_t buf_size = _buffer.size();
@@ -195,13 +150,106 @@ namespace streams {
                 bytes_given = to_copy;
             }
             if (s.size() > 0) {
-                bytes_given += safe_size_to_span_size(_source.read(s));
+                auto span_read = _source.read(s);
+                bytes_given += span_read.size();
             }
-            return span_size_to_safe_size(bytes_given);
+            return original_span.first(bytes_given);
         }
 
-        Istream& _source;
+        istream& _source;
         std::vector<gsl::byte> _buffer;
+    };
+
+    template<typename C, typename T = std::char_traits<C>>
+    optional<C> basic_get_char(istream& in)
+    { return in.get<C>(); }
+
+    template<typename C,
+        typename T = std::char_traits<C>,
+        typename A = std::allocator<C>>
+    optional<std::basic_string<C, T, A>>
+        basic_get_line(istream& in, C nl = '\n')
+    {
+        auto c = basic_get_char<C, T>(in);
+        if (!c) return nullopt;
+        std::basic_string<C, T, A> s;
+        while (true) {
+            if (nl == *c) return s;
+            s += *c;
+            c = basic_get_char<C, T>(in);
+            if (!c) return s;
+        }
+    }
+
+    optional<char> get_char(istream& in) { return basic_get_char<char>(in); }
+    optional<std::string> get_line(istream& in, char nl = '\n')
+    { return basic_get_line<char>(in, nl); }
+
+    template<typename T>
+    class stdio_base_istream: public istream {
+    public:
+        stdio_base_istream() {}
+
+        std::FILE* file() { return static_cast<T*>(this)->file(); }
+
+    private:
+        gsl::span<gsl::byte> _read(gsl::span<gsl::byte> s) override
+        {
+            //We have to do this static_assert in a function to delay it until
+            //stdio_base_istream is a complete type.
+            static_assert(std::is_base_of<stdio_base_istream, T>::value,
+                    "stdio_base_istream should only be used with classes "
+                    "derived from itself. See the CRTP.");
+            auto bytes_read = std::fread(s.data(), 1, s.size(), file());
+            if (std::ferror(file())) {
+                throw read_error("Error calling fread()");
+            }
+            return s.first(bytes_read);
+        }
+    };
+
+    class stdio_istream: public stdio_base_istream<stdio_istream> {
+    public:
+        explicit stdio_istream(std::FILE* f): _f(f) {}
+
+        std::FILE* file() { return _f; }
+
+    private:
+        std::FILE* _f;
+    };
+
+    stdio_istream stdins(stdin);
+
+    class stdio_file_istream: public stdio_base_istream<stdio_file_istream> {
+    public:
+        explicit stdio_file_istream(const std::string& path):
+            _f(std::fopen(path.c_str(), "r"))
+        { if (!_f) throw std::system_error(errno, std::system_category()); }
+
+        std::FILE* file() { return _f.get(); }
+
+    private:
+        struct Closer {
+            void operator()(std::FILE* f) { std::fclose(f); }
+        };
+
+        std::unique_ptr<FILE, Closer> _f;
+    };
+
+    class stdio_pipe_istream: public stdio_base_istream<stdio_pipe_istream> {
+    public:
+        explicit stdio_pipe_istream(const std::string& command):
+            _f(popen(command.c_str(), "r"))
+        { if (!_f) throw std::system_error(errno, std::system_category()); }
+
+        std::FILE* file() { return _f.get(); }
+
+    private:
+        struct Closer {
+            void operator()(std::FILE* f) { pclose(f); }
+        };
+
+        std::unique_ptr<FILE, Closer> _f;
     };
 }
 

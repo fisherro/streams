@@ -5,10 +5,12 @@ CXXFLAGS+=-I../../GSL
 CXXFLAGS+=-I../../fmt
 CXXFLAGS+=-I..
 
+CXXFLAGS+=-I../../Catch/single_include
+
 LDFLAGS+=-L../../fmt/build/fmt -lfmt
 
-all: examples
+all: tests
 
 clean:
-	rm examples
+	rm -f tests
 

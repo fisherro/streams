@@ -7,10 +7,12 @@
 #include <system_error>
 #include <gsl/gsl>
 #include <fmt/format.h>
-#include <type_safe/types.hpp>
 #include "streams_common.hpp"
 
 namespace streams {
+    ////////////////////////////////////////////////////////////////////////////
+    // ostreams
+    ////////////////////////////////////////////////////////////////////////////
     struct flush_error: public std::runtime_error {
         using std::runtime_error::runtime_error;
     };
@@ -19,7 +21,7 @@ namespace streams {
         using std::runtime_error::runtime_error;
     };
 
-    //Ostream
+    //ostream
     //An interface for output streams.
     //
     //To create your own stream, simply subclass and override _write().
@@ -27,80 +29,45 @@ namespace streams {
     //
     //If your subclass buffers or manages a data sink (like FILE*), you'll
     //want to include a non-virtual, no-throw flush operation in your dtor.
-    class Ostream {
+    class ostream {
     public:
-        Ostream() {}
-        Ostream(const Ostream&) = delete;
-        Ostream(Ostream&&) = delete;
-        Ostream& operator=(const Ostream&) = delete;
-        Ostream& operator=(Ostream&&) = delete;
-        virtual ~Ostream() {}
+        ostream() {}
+        ostream(const ostream&) = delete;
+        ostream(ostream&&) = delete;
+        ostream& operator=(const ostream&) = delete;
+        ostream& operator=(ostream&&) = delete;
+        virtual ~ostream() {}
 
-        type_safe::size_t write(gsl::span<const gsl::byte> s)
-        { return _write(s); }
+        std::ptrdiff_t write(gsl::span<const gsl::byte> bytes)
+        { return _write(bytes); }
 
         void flush() { _flush(); }
 
-        void put_byte(gsl::byte b)
-        { write({&b, 1}); }
-
         //Write some binary/unformatted data in host endianess.
         template<typename T>
-        void put_data(const T& t)
+        void put(const T& t)
         {
             static_assert(std::is_trivially_copyable<T>::value,
                     "Cannot use put_data() on values that are not trivially "
                     "copyable.");
             gsl::span<const T> s{&t, 1};
-            write(gsl::as_bytes(s));
+            _write(gsl::as_bytes(s));
         }
 
-        //Worth having this? For times when you have to write some padding.
-        template<typename T>
-        void put_data_n(const T& t, type_safe::size_t n)
-        {
-            static_assert(std::is_trivially_copyable<T>::value,
-                    "Cannot use put_data() on values that are not trivially "
-                    "copyable.");
-            for (type_safe::size_t i = 0U; i < n; ++i) put_data(t);
-        }
-
-        //tell and seek?
     private:
-        virtual type_safe::size_t _write(gsl::span<const gsl::byte> s) = 0;
+        virtual std::ptrdiff_t _write(gsl::span<const gsl::byte>) = 0;
         virtual void _flush() {}
     };
     
-    //print
-    //For using {fmt} with an Ostream.
-    void print(streams::Ostream& os, fmt::CStringRef format, fmt::ArgList args)
-    {
-        fmt::MemoryWriter w;
-        w.write(format, args);
-        gsl::span<const char> s{w.data(),
-            gsl::narrow<gsl::span<const char>::index_type>(w.size())};
-        os.write(gsl::as_bytes(s));
-    }
-    FMT_VARIADIC(void, print, streams::Ostream&, fmt::CStringRef);
-
-    void prints(streams::Ostream& os, fmt::CStringRef s)
-    {
-        //We could skip {fmt} and write directly.
-        print(os, "{}", s);
-    }
-
-    //Buffered_ostream
-    //Wrap another Ostream and buffer output to it.
-    class Buffered_ostream: public Ostream {
+    //buf_ostream
+    //Wrap another ostream and buffer output to it.
+    class buf_ostream: public ostream {
     public:
-        explicit Buffered_ostream(Ostream& os, type_safe::size_t size = 1024U):
+        explicit buf_ostream(ostream& os, std::ptrdiff_t size = 1024):
             _sink(os)
-        {
-            _buffer.reserve(
-                    static_cast<decltype(_buffer)::size_type>(size));
-        }
+        { _buffer.reserve(size); }
 
-        ~Buffered_ostream() { no_throw_flush(); }
+        ~buf_ostream() { no_throw_flush(); }
 
     private:
         //We need a non-virtual flush to call from the dtor.
@@ -126,73 +93,150 @@ namespace streams {
             non_virtual_flush();
         }
 
-        type_safe::size_t _write(gsl::span<const gsl::byte> s) override
+        std::ptrdiff_t _write(gsl::span<const gsl::byte> bytes) override
         {
-            //Since this function ended up mixing signed (gsl::span<>::size())
-            //and unsigned (std::vector<>::size()), it seemed like a good
-            //place to use type_safe types. But I had a hard time getting it
-            //to work. So, I settled for converting the unsigned values to
-            //signed and then converting to type_safe::size_t at the end.
-            auto total = s.size();
+            auto total = bytes.size();
             std::ptrdiff_t available = _buffer.capacity() - _buffer.size();
-            while (s.size() > available) {
-                auto first = s.first(available);
+            while (bytes.size() > available) {
+                auto first = bytes.first(available);
                 std::copy(first.begin(), first.end(),
                         std::back_inserter(_buffer));
                 flush();
-                s = s.subspan(available);
+                bytes = bytes.subspan(available);
                 available = _buffer.capacity() - _buffer.size();
             }
-            std::copy(s.begin(), s.end(), std::back_inserter(_buffer));
-            return span_size_to_safe_size(total);
+            std::copy(bytes.begin(), bytes.end(), std::back_inserter(_buffer));
+            return total;
         }
 
-        Ostream& _sink;
+        ostream& _sink;
         std::vector<gsl::byte> _buffer;
     };
 
-    //String_ostream
-    //Like std::ostringstream.
-    //fmt::format() can be used instead in many cases.
-    //It might be more useful to have a std::vector<gsl::byte> ostream.
-    class String_ostream: public Ostream {
+    class span_ostream: public ostream {
     public:
-        std::string string() { return _string; }
+        explicit span_ostream(gsl::span<gsl::byte> span): _free(span) {}
+        gsl::span<gsl::byte> unused() { return _free; }
 
     private:
-        type_safe::size_t _write(gsl::span<const gsl::byte> s) override 
+        std::ptrdiff_t _write(gsl::span<const gsl::byte> bytes) override
         {
-            _string.append(reinterpret_cast<const char*>(s.data()), s.size());
-            return span_size_to_safe_size(s.size());
+            if (_free.size() <= 0) return 0;
+            auto nbytes = std::min(bytes.size(), _free.size());
+            std::copy_n(bytes.begin(), nbytes, _free.begin());
+            _free = _free.subspan(nbytes);
+            return nbytes;
         }
 
-        std::string _string;
+        gsl::span<gsl::byte> _free;
     };
 
-    //Stdio_ostream
-    //Base class for Ostreams using C stdio.
-    //
-    //To subclass, use the CRTP:
-    //  class My_subclass: public Stdio_ostream<My_subclass>
-    //Then provide a _file() member function that returns a FILE*.
-    template<typename T>
-    class Stdio_ostream: public Ostream {
+    class vector_ostream: public ostream {
     public:
-        Stdio_ostream() {}
-
-        //I have to make this public?
-        std::FILE* _file() { return static_cast<T*>(this)->_file(); }
+        std::vector<gsl::byte>& vector() { return _v; }
 
     private:
-        type_safe::size_t _write(gsl::span<const gsl::byte> s) override
+        std::ptrdiff_t _write(gsl::span<const gsl::byte> bytes) override
+        {
+            std::copy(bytes.begin(), bytes.end(), std::back_inserter(_v));
+            return bytes.size();
+        }
+
+        std::vector<gsl::byte> _v;
+    };
+
+    ////////////////////////////////////////////////////////////////////////////
+    // formatted output
+    ////////////////////////////////////////////////////////////////////////////
+    
+    //print
+    //For using {fmt} with an ostream.
+    void print(streams::ostream& os, fmt::CStringRef format, fmt::ArgList args)
+    {
+        fmt::MemoryWriter w;
+        w.write(format, args);
+        gsl::span<const char> s{w.data(),
+            gsl::narrow<gsl::span<const char>::index_type>(w.size())};
+        os.write(gsl::as_bytes(s));
+    }
+    FMT_VARIADIC(void, print, streams::ostream&, fmt::CStringRef);
+
+    template<typename Char,
+        typename Traits = std::char_traits<Char>,
+        typename Alloc = std::allocator<Char>>
+    void basic_put_string(
+            ostream& o,
+            const std::basic_string<Char, Traits, Alloc>& s)
+    { 
+        gsl::span<const Char> span = s;
+        o.write(gsl::as_bytes(span));
+    }
+
+    template<typename Char, typename Traits = std::char_traits<Char>>
+    void basic_put_char(ostream& o, Char c)
+    {
+        gsl::span<const Char> s{&c, 1};
+        o.write(gsl::as_bytes(s));
+    }
+
+    template<typename Char,
+        typename Traits = std::char_traits<Char>,
+        typename Alloc = std::allocator<Char>>
+    void basic_put_line(
+            ostream& o,
+            const std::basic_string<Char, Traits, Alloc>& s)
+    {
+        gsl::span<const Char> span = s;
+        o.write(gsl::as_bytes(span));
+        basic_put_char(o, '\n');
+    }
+
+    void put_string(ostream& o, const std::string& s)
+    { basic_put_string(o, s); }
+
+    void put_line(ostream& o, const std::string& s)
+    { basic_put_line(o, s); }
+
+    void put_char(ostream& o, char c)
+    { basic_put_char(o, c); }
+
+    void put_wstring(ostream& o, const std::wstring& s)
+    { basic_put_string(o, s); }
+
+    void put_wline(ostream& o, const std::wstring& s)
+    { basic_put_line(o, s); }
+
+    void put_wchar(ostream& o, wchar_t c)
+    { basic_put_char(o, c); }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // stdio ostreams
+    ////////////////////////////////////////////////////////////////////////////
+
+    //stdio_base_ostream
+    //Base class for ostreams using C stdio.
+    //
+    //To subclass, use the CRTP:
+    //  class My_subclass: public stdio_base_ostream<My_subclass>
+    //Then provide a file() member function that returns a FILE*.
+    template<typename T>
+    class stdio_base_ostream: public ostream {
+    public:
+        stdio_base_ostream() {}
+
+        std::FILE* file() { return static_cast<T*>(this)->file(); }
+
+    private:
+        std::ptrdiff_t _write(gsl::span<const gsl::byte> bytes) override
         {
             //We have to do this static_assert in a function to delay it until
-            //Stdio_ostream is a complete type.
-            static_assert(std::is_base_of<Stdio_ostream, T>::value,
-                    "Stdio_ostream should only be used with classes derived "
+            //stdio_base_ostream is a complete type.
+            static_assert(std::is_base_of<stdio_base_ostream, T>::value,
+                    "stdio_base_ostream should only be used with classes derived "
                     "from itself. See the CRTP.");
-            auto bytes_written = std::fwrite(s.data(), 1, s.size(), _file());
-            if (std::ferror(_file())) {
+
+            auto bytes_written = std::fwrite(bytes.data(), 1, bytes.size(), file());
+            if (std::ferror(file())) {
                 throw write_error("Error calling fwrite()");
             }
             return bytes_written;
@@ -200,35 +244,60 @@ namespace streams {
 
         void _flush() override
         {
-            if (0 != std::fflush(_file())) {
+            if (0 != std::fflush(file())) {
                 throw flush_error("Error calling fflush()");
             }
         }
     };
 
-    //Simple_stdio_ostream
-    //A simple Stdio_ostream that doesn't own its FILE*.
-    class Simple_stdio_ostream: public Stdio_ostream<Simple_stdio_ostream> {
+    //stdio_ostream
+    //A simple stdio_base_ostream that doesn't own its FILE*.
+    class stdio_ostream: public stdio_base_ostream<stdio_ostream> {
     public:
-        explicit Simple_stdio_ostream(std::FILE* f): _f(f) {}
-        std::FILE* _file() { return _f; }
+        explicit stdio_ostream(std::FILE* f): _f(f) {}
+        std::FILE* file() { return _f; }
     private:
         std::FILE* _f;
     };
 
     //Wrappers for the standard streams:
-    Simple_stdio_ostream stdouts(stdout);
-    Simple_stdio_ostream stderrs(stderr);
+    stdio_ostream stdouts(stdout);
+    stdio_ostream stderrs(stderr);
 
-    //File_ostream
+    //stdio_file_ostream
     //For writing to a file.
-    class File_ostream: public Stdio_ostream<File_ostream> {
+    class stdio_file_ostream: public stdio_base_ostream<stdio_file_ostream> {
     public:
-        explicit File_ostream(const std::string& path, bool append = false):
+        //TODO: Ctor for a std::experimental::filesystem path.
+        
+        explicit stdio_file_ostream(
+                const std::string& path, bool append = false):
             _f(std::fopen(path.c_str(), append? "a": "w"))
         { if (!_f) throw std::system_error(errno, std::system_category()); }
 
-        std::FILE* _file() { return _f.get(); }
+        std::FILE* file() { return _f.get(); }
+
+        enum class seek_origin { set, cur, end };
+
+        //TODO: Won't work with very large files.
+        std::ptrdiff_t tell()
+        {
+            auto pos = std::ftell(file());
+            if (EOF == pos) {
+                throw std::system_error(errno, std::system_category());
+            }
+            return pos;
+        }
+        
+        //TODO: Won't work with very large files.
+        void seek(std::ptrdiff_t offset, seek_origin origin)
+        {
+            int o = SEEK_SET;
+            if (seek_origin::cur == origin) o = SEEK_CUR;
+            else if (seek_origin::end == origin) o = SEEK_END;
+            auto result = std::fseek(file(), offset, o);
+            if (0 != result) throw seek_error("fseek() failed");
+        }
 
     private:
         struct Closer {
@@ -242,19 +311,23 @@ namespace streams {
         std::unique_ptr<std::FILE, Closer> _f;
     };
 
-    //Pipe_ostream
+    ////////////////////////////////////////////////////////////////////////////
+    // platform specific ostreams
+    ////////////////////////////////////////////////////////////////////////////
+
+    //stdio_pipe_ostream
     //Run a command and create a pipe to its stdin.
     //NOTE: Uses popen(), which is not the safest way to start a subprocess.
     //TODO: Need to conditionally compile this in case popen isn't there.
     //
     //Could probably refactor a common base class out of this and File_ostream.
-    class Pipe_ostream: public Stdio_ostream<Pipe_ostream> {
+    class stdio_pipe_ostream: public stdio_base_ostream<stdio_pipe_ostream> {
     public:
-        explicit Pipe_ostream(const std::string& command):
+        explicit stdio_pipe_ostream(const std::string& command):
             _f(popen(command.c_str(), "w"))
         { if (!_f) throw std::system_error(errno, std::system_category()); }
 
-        std::FILE* _file() { return _f.get(); }
+        std::FILE* file() { return _f.get(); }
 
     private:
         struct Closer {
@@ -267,11 +340,5 @@ namespace streams {
 
         std::unique_ptr<std::FILE, Closer> _f;
     };
-
-#if 0
-    //Do we need this class to make it easier to created ostream filters?
-    class Filtered_ostream: public Ostream {
-    };
-#endif
 }
 

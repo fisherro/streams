@@ -1,117 +1,132 @@
 #include <ctime>
+#include <regex>
+#include <string>
 #include <fmt/time.h>
 #include <streams/ostream.hpp>
 #include <streams/istream.hpp>
 
-std::string encode(gsl::span<const gsl::byte> s)
+struct Student {
+    std::string name;
+    int         id;
+    float       gpa;
+};
+
+void write_student_binary(streams::ostream& out, const Student& student)
 {
-    std::string output;
-    for (auto b: s) {
-        auto c = static_cast<int>(b);
-        if (::isprint(c)) output += static_cast<char>(c);
-        else output += fmt::format("[{:02x}]", c);
-    }
-    return output;
+    out.put(student.name.size());
+    out.write(gsl::as_bytes(gsl::span<const char>(
+                    student.name.data(), student.name.size())));
+    out.put(student.id);
+    out.put(student.gpa);
 }
 
-struct Debug_ostream: public streams::Ostream {
-    std::string _name;
-    streams::Ostream& _sink;
-    Debug_ostream(const std::string& name, streams::Ostream& stream):
-        _name(name), _sink(stream) {}
-    type_safe::size_t _write(gsl::span<const gsl::byte> s) override
-    {
-        streams::print(streams::stderrs, "{}: _write({})\n",
-                _name, encode(s));
-        return _sink.write(s);
-    }
-    void _flush() override
-    {
-        streams::print(streams::stderrs, "{}: _flush()\n", _name);
-        _sink.flush();
-    }
-};
+streams::optional<Student> read_student_binary(streams::istream& in)
+{
+    Student student;
+    auto size = in.get<std::string::size_type>();
+    if (!size) return streams::nullopt;
+    if (*size <= 0) return streams::nullopt;
+    student.name.resize(*size);
+    auto result = in.read(gsl::as_writeable_bytes(gsl::span<char>(
+                    &student.name[0], student.name.size())));
+    if (result.size() <= 0) return streams::nullopt;
+    if (!in.get(student.id)) return streams::nullopt;
+    if (!in.get(student.gpa)) return streams::nullopt;
+    return student;
+}
 
-struct Debug_istream: public streams::Istream {
-    bool _enabled = true;
-    std::string _name;
-    streams::Istream& _source;
-    Debug_istream(const std::string& name, streams::Istream& stream):
-        _name(name), _source(stream) {}
-    type_safe::size_t _read(gsl::span<gsl::byte> s) override
-    {
-        auto bytes_read = _source.read(s);
-        if (_enabled) {
-            streams::print(streams::stderrs, "{}: _read({})\n",
-                    _name, encode(s));
-        }
-        return bytes_read;
+void write_student_text(streams::ostream& out, const Student& student)
+{
+    streams::print(out, "\"{}\",{},{}\n",
+            student.name, student.id, student.gpa);
+}
+
+streams::optional<Student> read_student_text(streams::istream& in)
+{
+    //What to do about "formatted input"?
+    //
+    //In my experience, formatted input was never as easy as the standard
+    //iostreams pretended. It is about matching patterns and splitting up
+    //the input into small chunks that might then be used with an ad hoc
+    //istringstream and operator>>.
+    //(Or, more nicely, via boost::lexical_cast.)
+    //
+    //More thought needed.
+    
+    auto line = streams::get_line(in);
+    if (!line) return streams::nullopt;
+    std::regex rx(R"|("([^"]+)",([0-9]+),([0-9.]+))|");
+    std::smatch match;
+    if (!std::regex_match(*line, match, rx)) {
+        throw std::string("Format mismatch!");
     }
-    void enable() { _enabled = true; }
-    void disable() { _enabled = false; }
-};
+    Student student;
+    student.name = match[1];
+    student.id = std::stoi(match[2]);
+    student.gpa = std::stof(match[3]);
+    return student;
+}
+
+void print_student_header()
+{
+    streams::print(streams::stdouts, "{:<10} {:^4} {:>5}\n",
+            "NAME", "ID", "GPA");
+}
+
+void print_student(const Student& student)
+{
+    streams::print(streams::stdouts, "{:<10} {:^4} {:>5.2f}\n",
+            student.name, student.id, student.gpa);
+}
 
 int main()
 {
-    //Straight to standard out:
-    streams::print(streams::stdouts, "{:>20} ${:X}\n", 3.1415926, 255);
+    std::vector<Student> class_roll{
+        { "Alice", 12, 3.9 }, { "Bob", 23, 3.0 }, { "Chris", 34, 3.2 }
+    };
 
-    //Using a string stream:
+    //Unformatted I/O:
     {
-        streams::String_ostream sos;
-        streams::print(sos, "{0} {0} {0}", "La");
-        streams::print(streams::stdouts, "{:=^80}\n", sos.string());
+        streams::vector_ostream out;
+        std::for_each(class_roll.begin(), class_roll.end(),
+                [&out](const auto& student) {
+                    write_student_binary(out, student);
+                });
+        streams::span_istream in(out.vector());
+        std::vector<Student> roll2;
+        while (true) {
+            auto student = read_student_binary(in);
+            if (!student) break;
+            roll2.push_back(*student);
+        }
+        print_student_header();
+        std::for_each(roll2.begin(), roll2.end(), print_student);
     }
 
-    //Using a file output stream:
+    //Formatted I/O:
     {
-        streams::File_ostream fos("out.txt");
-        std::time_t t(std::time(nullptr));
-        streams::print(fos, "The date and time are {:%Y-%b-%d %T}.\n",
-                *std::localtime(&t));
+        streams::vector_ostream out;
+        std::for_each(class_roll.begin(), class_roll.end(),
+                [&out](const auto& student) {
+                    write_student_text(out, student);
+                });
+        streams::span_istream in(out.vector());
+        std::vector<Student> roll2;
+        while (true) {
+            auto student = read_student_text(in);
+            if (!student) break;
+            roll2.push_back(*student);
+        }
+        print_student_header();
+        std::for_each(roll2.begin(), roll2.end(), print_student);
     }
-
-    //Using a output pipe and binary output:
+    
+    //Character-based filter ostream:
     {
-        streams::Pipe_ostream pos("/opt/local/bin/xxd");
-        uint8_t u8 = 0x01;
-        uint16_t u16 = 0x0203;
-        uint32_t u32 = 0x04050607;
-        pos.put_data(u8);
-        pos.put_data(u16);
-        pos.put_data(u32);
-    }
-
-    //Using a buffered output stream:
-    {
-        //Stdout is already buffered, but using it to test Buffered_ostream.
-        //Small buffer size for testing purposes.
-#if 1
-        streams::Buffered_ostream bos(streams::stdouts, 10u);
-#else
-        Debug_ostream os2("inner", streams::stdouts);
-        streams::Buffered_ostream os1(os2, 10);
-        Debug_ostream bos("outer", os1);
-#endif
-        for (int i = 0; i < 100; ++i)
-            streams::print(bos, "{}, ", i);
-        streams::prints(bos, "\n");
-    }
-
-    //Using an input file stream:
-    {
-        streams::File_istream fis("out.txt");
-        auto line = fis.getline();
-        streams::print(streams::stdouts, "{}\n", line.value_or("No line."));
-    }
-
-    //Creating a transformation ostream:
-    {
-        struct Shout_ostream: public streams::Ostream {
-            Ostream& _sink;
-            Shout_ostream(Ostream& s): _sink(s) {}
-            type_safe::size_t _write(gsl::span<const gsl::byte> before)
-                override
+        struct Shout_ostream: public streams::ostream {
+            streams::ostream& _sink;
+            Shout_ostream(ostream& s): _sink(s) {}
+            std::ptrdiff_t _write(gsl::span<const gsl::byte> before) override
             {
                 std::vector<gsl::byte> after;
                 after.reserve(before.size());
@@ -124,57 +139,117 @@ int main()
                 return _sink.write(after);
             }
             void _flush() override { _sink.flush(); }
-        } shout(streams::stdouts);
-        streams::prints(shout, "Hello, world!\n");
+        };
+
+        Shout_ostream out(streams::stdouts);
+        streams::put_line(out, "This is a test. This is only a test.");
     }
 
-    //Using an Unget_istream:
+    //Line-based filter ostream:
     {
-        streams::File_istream fis("out.txt");
-        streams::Unget_istream uis(fis);
-        auto dash = gsl::as_bytes(gsl::span<const char>("DASH"));
-        auto colon = gsl::as_bytes(gsl::span<const char>("COLON"));
-        //When converting the strings to spans, the size counts the NULs.
-        dash = dash.first(dash.size() - 1);
-        colon = colon.first(dash.size() - 1);
-        while (true) {
-            auto c = uis.get_byte();
-            if (!c) break;
-            if (c.value() == gsl::byte('-')) {
-                uis.unget(dash);
-                continue;
+        struct Line_number_ostream: public streams::ostream {
+            int _line = 0;
+            streams::ostream& _sink;
+            explicit Line_number_ostream(streams::ostream& out): _sink(out) {}
+            std::ptrdiff_t _write(gsl::span<const gsl::byte> data) override
+            {
+                std::ptrdiff_t written = 0;
+                if (0 == _line) {
+                    //If this is the first time we're called,
+                    //write the header for the first line.
+                    streams::vector_ostream vos;
+                    streams::print(vos, "{}: ", ++_line);
+                    written += _sink.write(vos.vector());
+                }
+                do {
+                    auto nl = std::find(data.begin(), data.end(),
+                            gsl::byte('\n'));
+                    if (data.end() == nl) {
+                        //If there is now newline,
+                        //write the data and we're done.
+                        written += _sink.write(data);
+                        break;
+                    }
+                    //Otherwise, write up to and including the newline...
+                    auto count = std::distance(data.begin(), nl + 1);
+                    written += _sink.write(data.first(count));
+                    //...write the line header...
+                    streams::vector_ostream vos;
+                    streams::print(vos, "{}: ", ++_line);
+                    written += _sink.write(vos.vector());
+                    //...and most to past the newline.
+                    data = data.subspan(count);
+                } while (data.size() > 0);
+                return written;
             }
-            if (c.value() == gsl::byte(':')) {
-                uis.unget(colon);
-                continue;
-            }
-            streams::stdouts.put_byte(c.value());
-        }
+            void _flush() override { _sink.flush(); }
+        };
+
+        Line_number_ostream lnos(streams::stdouts);
+        streams::put_string(lnos,
+                "Roses are red,\n"
+                "Violets are blue,\n"
+                "This poem has bugs,\n"
+                "And...NO CARRIER");
+        streams::put_char(streams::stdouts, '\n');
     }
 
-    //Using Buffered_istream:
+    //Line-based filter otream, take 2:
     {
-        //A File_istream (built on stdio) should be buffered itself,
-        //but using for testing purposes.
-        //Small buffer size for testing purposes.
-#if 1
-        streams::File_istream fis("examples.cpp");
-        streams::Buffered_istream bis(fis, 10u);
-#else
-        streams::File_istream fis_("examples.cpp");
-        Debug_istream fis("inner", fis_);
-        streams::Buffered_istream bis_(fis, 10u);
-        Debug_istream bis("outer", bis_);
-        bis.disable();
-#endif
-        size_t total = 0;
-        while (true) {
-            auto line = bis.getline();
-            if (!line) break;
-            total += line.value().size();
-            streams::print(streams::stdouts, "{}\n", line.value());
-            if (total > 100) break;
+        struct Reverse_line_ostream: public streams::ostream {
+            streams::ostream& _sink;
+            std::vector<gsl::byte> _buffer;
+
+            Reverse_line_ostream(ostream& s): _sink(s) {}
+
+            std::ptrdiff_t _write(gsl::span<const gsl::byte> data) override
+            {
+                auto written = data.size();
+                while (data.size() > 0) {
+                    auto nl = std::find(data.begin(), data.end(),
+                            gsl::byte('\n'));
+                    if (data.end() != nl) {
+                        auto count = std::distance(data.begin(), nl);
+                        std::copy_n(data.begin(), count,
+                                std::back_inserter(_buffer));
+                        std::reverse(_buffer.begin(), _buffer.end());
+                        _buffer.push_back(gsl::byte('\n'));
+                        _sink.write(_buffer);
+                        _sink.flush();
+                        _buffer.clear();
+                        data = data.subspan(count + 1);
+                    } else {
+                        std::copy(data.begin(), data.end(),
+                                std::back_inserter(_buffer));
+                        break;
+                    }
+                }
+                return written;
+            }
+
+            ~Reverse_line_ostream()
+            {
+                try {
+                    if (!_buffer.empty()) {
+                        std::reverse(_buffer.begin(), _buffer.end());
+                        _sink.write(_buffer);
+                        _sink.flush();
+                    }
+                } catch (...) {
+                    //Don't let exceptions escape dtors!
+                }
+            }
+        };
+
+        {
+            Reverse_line_ostream rlos(streams::stdouts);
+            streams::put_string(rlos,
+                    "Roses are red,\n"
+                    "Violets are blue,\n"
+                    "This poem has bugs,\n"
+                    "And...NO CARRIER");
         }
+        streams::put_char(streams::stdouts, '\n');
     }
 }
 
