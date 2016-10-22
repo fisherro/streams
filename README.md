@@ -93,7 +93,7 @@ Since the standard names are macros, I couldn't just use, e.g., `streams::stdout
 ## Platform specific
 
 * **stdio\_pipe\_ostream**: Output pipe to a command
-* **stdio\_pipe\_istream**: TBD Input pipe from a command
+* **stdio\_pipe\_istream**: Input pipe from a command
 * **posix\_fd\_ostream**: TBD
 * **posix\_file\_ostream**: TBD
 
