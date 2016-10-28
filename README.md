@@ -20,6 +20,7 @@ Experiments in replacing standard C++ iostreams. Comments welcome.
   * Get the `FILE*` from a stdio-based stream with `FILE* file()`
 * No overloading of the shift operators
 * Formatted input is still an open question
+  * I need to learn more about char traits and localization
 
 This code uses...
 
