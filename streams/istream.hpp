@@ -251,5 +251,83 @@ namespace streams {
 
         std::unique_ptr<FILE, Closer> _f;
     };
+
+    template<typename T>
+    class posix_base_istream: public istream {
+    public:
+        posix_base_istream() {}
+        int fd() { return static_cast<T*>(this)->fd(); }
+    private:
+        gsl::span<gsl::byte> _read(gsl::span<gsl::byte> bytes) override
+        {
+            static_assert(std::is_base_of<posix_base_istream, T>::value,
+                    "posix_base_istream should only be used with classes "
+                    "derived from itself. See the CRTP.");
+
+            auto original_span = bytes;
+            auto total_read = 0;
+            while (bytes.size() > 0) {
+                auto bytes_read = ::read(fd(), bytes.data(), bytes.size());
+                if (-1 == bytes_read) {
+                    throw std::system_error(errno, std::system_category());
+                }
+                if (0 == bytes_read) break;
+                bytes = bytes.subspan(bytes_read);
+                total_read += bytes_read;
+            }
+            return original_span.first(total_read);
+        }
+    };
+
+    class posix_fd_istream: public posix_base_istream<posix_fd_istream> {
+    public:
+        explicit posix_fd_istream(int fd): _fd(fd) {}
+        int fd() { return _fd; }
+    private:
+        int _fd;
+    };
+
+    class posix_file_istream: public posix_base_istream<posix_file_istream> {
+    public:
+        explicit posix_file_istream(const std::string& path):
+            _fd(open(path.c_str(), O_RDONLY))
+        {
+            if (-1 == _fd) {
+                throw std::system_error(errno, std::system_category());
+            }
+        }
+
+        int fd() { return _fd; }
+
+        //TODO: Create an abstract class for seek/tell.
+        //TODO: Factor seek/tell for posix fd into its own class?
+
+        enum class seek_origin { set, cur, end };
+
+        void seek(std::ptrdiff_t offset, seek_origin origin)
+        {
+            int o = SEEK_SET;
+            if (seek_origin::cur == origin) o = SEEK_CUR;
+            else if (seek_origin::end == origin) o = SEEK_END;
+            auto loc = lseek(_fd, offset, o);
+            if (-1 == loc) {
+                throw std::system_error(errno, std::system_category());
+            }
+        }
+
+        std::ptrdiff_t tell()
+        {
+            auto loc = lseek(_fd, 0, SEEK_CUR);
+            if (-1 == loc) {
+                throw std::system_error(errno, std::system_category());
+            }
+            return loc;
+        }
+
+        ~posix_file_istream() { close(_fd); }
+
+    private:
+        int _fd;
+    };
 }
 

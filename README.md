@@ -87,21 +87,34 @@ The standard streams wrapped in stdio\_istream/stdio\_ostream.
 
 Since the standard names are macros, I couldn't just use, e.g., `streams::stdout`. So I added an extra "s". (For "stream".)
 
-* stdins: stdin
-* stdouts: stdout
-* stderrs: stderr
+* **stdins**: stdin
+* **stdouts**: stdout
+* **stderrs**: stderr
 
 ## Platform specific
 
 * **stdio\_pipe\_ostream**: Output pipe to a command
 * **stdio\_pipe\_istream**: Input pipe from a command
-* **posix\_base\_ostream**: TBD
-* **posix\_fd\_ostream**: TBD
-* **posix\_file\_ostream**: TBD
-* **posix\_base\_istream**: TBD
-* **posix\_fd\_istream**: TBD
-* **posix\_file\_istream**: TBD
+* **posix\_base\_ostream**: A base class of ostreams using a POSIX file descriptor.
+* **posix\_fd\_ostream**: A file descriptor ostream that doesn't own its fd
+* **posix\_file\_ostream**: A file ostream that uses the POSIX file APIs
+* **posix\_base\_istream**: A base class of istreams using a POSIX file descriptor
+* **posix\_fd\_istream**: A file descriptor istream that doesn't own its fd
+* **posix\_file\_istream**: A file istream that uses the POSIX file APIs
+
+## Example streams
+
+Found in examples/example.cpp.
+
+* **Shout\_ostream**: A filter to be used with another ostream that converts all output to upper case.
+* **Line\_number\_ostream**: A filter to be used with another ostream that prefixes each line with a line number.
+* **Reverse\_line\_ostream**: A filter to be used with another ostream that reverses each line of output.
 
 ## Possible expansions
 
+* An abstract class for seekable things?
+* Refactor the seek/tell implementation for POSIX streams into a base class?
+* Refactor the seek/tell implementation for stdio streams into a base class?
+* Input-formatting : scanf :: {fmt} : printf
 * Some quoting/unquoting functions
+

@@ -390,10 +390,16 @@ namespace streams {
     };
 
     class posix_file_ostream: public posix_base_ostream<posix_file_ostream> {
+        static int oflag(bool append)
+        { return O_CREAT | O_WRONLY | (append? O_APPEND: O_TRUNC); }
+
+        static mode_t mode()
+        { return S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH; }
+
     public:
         explicit posix_file_ostream(
                 const std::string& path, bool append = false):
-            _fd(open(path.c_str(), O_CREAT | O_WRONLY | (append? O_APPEND: 0)))
+            _fd(open(path.c_str(), oflag(append), mode()))
         {
             if (-1 == _fd) {
                 throw std::system_error(errno, std::system_category());

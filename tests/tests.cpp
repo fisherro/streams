@@ -169,7 +169,7 @@ TEST_CASE("streams", "[streams]")
     }
 
     SECTION("stdio_file_*stream") {
-        const std::string fname("test.txt");
+        const std::string fname("stdio_file_test.txt");
         std::time_t t(std::time(nullptr));
         std::string date = fmt::format("{:%Y-%b-%d %T}", *std::localtime(&t));
         {
@@ -196,6 +196,21 @@ TEST_CASE("streams", "[streams]")
         {
             std::string command = fmt::format("base64 -D -i {}", fname);
             streams::stdio_pipe_istream in(command);
+            auto line = streams::get_line(in);
+            REQUIRE(*line == date);
+        }
+    }
+
+    SECTION("posix_file_*stream") {
+        const std::string fname("posix_file_test.txt");
+        std::time_t t(std::time(nullptr));
+        std::string date = fmt::format("{:%Y-%b-%d %T}", *std::localtime(&t));
+        {
+            streams::posix_file_ostream out(fname);
+            streams::put_string(out, date);
+        }
+        {
+            streams::posix_file_istream in(fname);
             auto line = streams::get_line(in);
             REQUIRE(*line == date);
         }
