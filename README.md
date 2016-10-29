@@ -95,8 +95,12 @@ Since the standard names are macros, I couldn't just use, e.g., `streams::stdout
 
 * **stdio\_pipe\_ostream**: Output pipe to a command
 * **stdio\_pipe\_istream**: Input pipe from a command
+* **posix\_base\_ostream**: TBD
 * **posix\_fd\_ostream**: TBD
 * **posix\_file\_ostream**: TBD
+* **posix\_base\_istream**: TBD
+* **posix\_fd\_istream**: TBD
+* **posix\_file\_istream**: TBD
 
 ## Possible expansions
 

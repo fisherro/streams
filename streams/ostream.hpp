@@ -5,9 +5,16 @@
 #include <memory>
 #include <string>
 #include <system_error>
+
 #include <gsl/gsl>
 #include <fmt/format.h>
+
+#include <unistd.h>
+#include <fcntl.h>
+
 #include "streams_common.hpp"
+
+//TODO: Split into multiple files.
 
 namespace streams {
     ////////////////////////////////////////////////////////////////////////////
@@ -339,6 +346,93 @@ namespace streams {
         };
 
         std::unique_ptr<std::FILE, Closer> _f;
+    };
+
+    template<typename T>
+    class posix_base_ostream: public ostream {
+    public:
+        posix_base_ostream() {}
+        int fd() { return static_cast<T*>(this)->fd(); }
+    private:
+        std::ptrdiff_t _write(gsl::span<const gsl::byte> bytes) override
+        {
+            //We have to do this static_assert in a function to delay it until
+            //this is a complete type.
+            static_assert(std::is_base_of<posix_base_ostream, T>::value,
+                    "posix_base_ostream should only be used with classes "
+                    "derived from itself. See the CRTP.");
+
+            auto total_written = 0;
+            while (bytes.size() > 0) {
+                auto bytes_written = ::write(fd(), bytes.data(), bytes.size());
+                if (-1 == bytes_written) {
+                    throw std::system_error(errno, std::system_category());
+                }
+                total_written += bytes_written;
+                bytes = bytes.subspan(bytes_written);
+            }
+            return total_written;
+        }
+        void _flush() override
+        {
+            if (-1 == fsync(fd())) {
+                throw std::system_error(errno, std::system_category());
+            }
+        }
+    };
+
+    class posix_fd_ostream: public posix_base_ostream<posix_fd_ostream> {
+    public:
+        explicit posix_fd_ostream(int fd): _fd(fd) {}
+        int fd() { return _fd; }
+    private:
+        int _fd;
+    };
+
+    class posix_file_ostream: public posix_base_ostream<posix_file_ostream> {
+    public:
+        explicit posix_file_ostream(
+                const std::string& path, bool append = false):
+            _fd(open(path.c_str(), O_CREAT | O_WRONLY | (append? O_APPEND: 0)))
+        {
+            if (-1 == _fd) {
+                throw std::system_error(errno, std::system_category());
+            }
+        }
+
+        int fd() { return _fd; }
+
+        //TODO: Factor out seek_origin, tell, and seek into an abstract class?
+        std::ptrdiff_t tell()
+        {
+            auto loc = lseek(_fd, 0, SEEK_CUR);
+            if (-1 == loc) {
+                throw std::system_error(errno, std::system_category());
+            }
+            return loc;
+        }
+
+        enum class seek_origin { set, cur, end };
+
+        void seek(std::ptrdiff_t offset, seek_origin origin)
+        {
+            int o = SEEK_SET;
+            if (seek_origin::cur == origin) o = SEEK_CUR;
+            else if (seek_origin::end == origin) o = SEEK_END;
+            auto loc = lseek(_fd, offset, o);
+            if (-1 == loc) {
+                throw std::system_error(errno, std::system_category());
+            }
+        }
+
+        ~posix_file_ostream()
+        {
+            fsync(_fd);
+            close(_fd);
+        }
+
+    private:
+        int _fd;
     };
 }
 
