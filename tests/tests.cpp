@@ -183,6 +183,22 @@ TEST_CASE("streams", "[streams]")
         }
     }
 
+    SECTION("stdio_seekable") {
+        const std::string fname("stdio_seek_test.txt");
+        std::time_t t(std::time(nullptr));
+        std::string date = fmt::format("{:%Y-%b-%d %T}", *std::localtime(&t));
+        {
+            streams::stdio_file_ostream out(fname);
+            streams::print(out, "*****{}\n", date);
+        }
+        {
+            streams::stdio_file_istream in(fname);
+            in.seek(5, streams::seekable::seek_origin::set);
+            auto line = streams::get_line(in);
+            REQUIRE(*line == date);
+        }
+    }
+
     //streams::stdio_pipe_*stream
     SECTION("stdio_pipe_*stream") {
         const std::string fname("base64.txt");
@@ -211,6 +227,22 @@ TEST_CASE("streams", "[streams]")
         }
         {
             streams::posix_file_istream in(fname);
+            auto line = streams::get_line(in);
+            REQUIRE(*line == date);
+        }
+    }
+
+    SECTION("posix_fd_seekable") {
+        const std::string fname("posix_seek_test.txt");
+        std::time_t t(std::time(nullptr));
+        std::string date = fmt::format("{:%Y-%b-%d %T}", *std::localtime(&t));
+        {
+            streams::posix_file_ostream out(fname);
+            streams::print(out, "*****{}\n", date);
+        }
+        {
+            streams::posix_file_istream in(fname);
+            in.seek(5, streams::seekable::seek_origin::set);
             auto line = streams::get_line(in);
             REQUIRE(*line == date);
         }

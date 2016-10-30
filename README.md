@@ -18,6 +18,7 @@ Experiments in replacing standard C++ iostreams. Comments welcome.
   * Implement one function (`FILE* file()`) to create stdio istream/ostream subclasses
   * Non-owning ostream and istream classes to create a stream from a `FILE*`
   * Get the `FILE*` from a stdio-based stream with `FILE* file()`
+* Seekability as a mix-in class
 * No overloading of the shift operators
 * Formatted input is still an open question
   * I need to learn more about char traits and localization
@@ -32,6 +33,11 @@ This code uses...
 
 Anything marked "TBD" hasn't been implemented yet.
 
+## Common
+
+* **seekable**: Base class with seek and tell member functions
+* **stdio\_seekable**: Seekable base class for seeking on `std::FILE*`
+
 ## Unformatted output
 
 A span of bytes can be written to any of the ostream classes via `write()`. The `put()` member function can be used to write individual binary objects (in host endianess.)
@@ -42,7 +48,7 @@ A span of bytes can be written to any of the ostream classes via `write()`. The 
 * **vector\_ostream**: Write output to a vector&lt;byte&gt;
 * **stdio\_base\_ostream**: Base class for stdio-based ostreams
 * **stdio\_ostream**: Stdio-based ostream that doesn't own its `FILE*`
-* **stdio\_file\_ostream**: Stdio-based file ostream (with seek and tell)
+* **stdio\_file\_ostream**: Seekable stdio-based file ostream
 * **file\_ostream**: TBD Typically an alias for a platform-specific file ostream
 
 ## Formatted output
@@ -68,7 +74,7 @@ A span of bytes can be read from these istream classes with `read()`. The `get()
 * **unget\_istream**: Add an arbitrary unget buffer to another istream
 * **stdio\_base\_istream**: Base class for stdio-based istreams
 * **stdio\_istream**: Stdio-based ostream that doesn't own its `FILE*`
-* **stdio\_file\_istream**: Stdio-based file istream (with seek and tell)
+* **stdio\_file\_istream**: Seekable stdio-based file istream
 * **file\_istream**: TBD Typically an alias for a platform-specific file istream
 
 ## Formatted input
@@ -95,12 +101,13 @@ Since the standard names are macros, I couldn't just use, e.g., `streams::stdout
 
 * **stdio\_pipe\_ostream**: Output pipe to a command
 * **stdio\_pipe\_istream**: Input pipe from a command
+* **posix\_fd\_seekable**: Base class for seek/tell on POSIX file descriptors
 * **posix\_base\_ostream**: A base class of ostreams using a POSIX file descriptor.
 * **posix\_fd\_ostream**: A file descriptor ostream that doesn't own its fd
-* **posix\_file\_ostream**: A file ostream that uses the POSIX file APIs
+* **posix\_file\_ostream**: A seekable file ostream that uses the POSIX file APIs
 * **posix\_base\_istream**: A base class of istreams using a POSIX file descriptor
 * **posix\_fd\_istream**: A file descriptor istream that doesn't own its fd
-* **posix\_file\_istream**: A file istream that uses the POSIX file APIs
+* **posix\_file\_istream**: A seekable file istream that uses the POSIX file APIs
 
 ## Example streams
 

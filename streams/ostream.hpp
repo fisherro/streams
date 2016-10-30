@@ -273,7 +273,10 @@ namespace streams {
 
     //stdio_file_ostream
     //For writing to a file.
-    class stdio_file_ostream: public stdio_base_ostream<stdio_file_ostream> {
+    class stdio_file_ostream:
+        public stdio_base_ostream<stdio_file_ostream>,
+        public stdio_seekable<stdio_file_ostream>
+    {
     public:
         //TODO: Ctor for a std::experimental::filesystem path.
         
@@ -283,28 +286,6 @@ namespace streams {
         { if (!_f) throw std::system_error(errno, std::system_category()); }
 
         std::FILE* file() { return _f.get(); }
-
-        enum class seek_origin { set, cur, end };
-
-        //TODO: Won't work with very large files.
-        std::ptrdiff_t tell()
-        {
-            auto pos = std::ftell(file());
-            if (EOF == pos) {
-                throw std::system_error(errno, std::system_category());
-            }
-            return pos;
-        }
-        
-        //TODO: Won't work with very large files.
-        void seek(std::ptrdiff_t offset, seek_origin origin)
-        {
-            int o = SEEK_SET;
-            if (seek_origin::cur == origin) o = SEEK_CUR;
-            else if (seek_origin::end == origin) o = SEEK_END;
-            auto result = std::fseek(file(), offset, o);
-            if (0 != result) throw seek_error("fseek() failed");
-        }
 
     private:
         struct Closer {
@@ -389,7 +370,10 @@ namespace streams {
         int _fd;
     };
 
-    class posix_file_ostream: public posix_base_ostream<posix_file_ostream> {
+    class posix_file_ostream:
+        public posix_base_ostream<posix_file_ostream>,
+        public posix_fd_seekable<posix_file_ostream>
+    {
         static int oflag(bool append)
         { return O_CREAT | O_WRONLY | (append? O_APPEND: O_TRUNC); }
 
@@ -407,29 +391,6 @@ namespace streams {
         }
 
         int fd() { return _fd; }
-
-        //TODO: Factor out seek_origin, tell, and seek into an abstract class?
-        std::ptrdiff_t tell()
-        {
-            auto loc = lseek(_fd, 0, SEEK_CUR);
-            if (-1 == loc) {
-                throw std::system_error(errno, std::system_category());
-            }
-            return loc;
-        }
-
-        enum class seek_origin { set, cur, end };
-
-        void seek(std::ptrdiff_t offset, seek_origin origin)
-        {
-            int o = SEEK_SET;
-            if (seek_origin::cur == origin) o = SEEK_CUR;
-            else if (seek_origin::end == origin) o = SEEK_END;
-            auto loc = lseek(_fd, offset, o);
-            if (-1 == loc) {
-                throw std::system_error(errno, std::system_category());
-            }
-        }
 
         ~posix_file_ostream()
         {

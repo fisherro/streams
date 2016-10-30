@@ -220,7 +220,10 @@ namespace streams {
 
     stdio_istream stdins(stdin);
 
-    class stdio_file_istream: public stdio_base_istream<stdio_file_istream> {
+    class stdio_file_istream:
+        public stdio_base_istream<stdio_file_istream>,
+        public stdio_seekable<stdio_file_istream>
+    {
     public:
         explicit stdio_file_istream(const std::string& path):
             _f(std::fopen(path.c_str(), "r"))
@@ -287,7 +290,10 @@ namespace streams {
         int _fd;
     };
 
-    class posix_file_istream: public posix_base_istream<posix_file_istream> {
+    class posix_file_istream:
+        public posix_base_istream<posix_file_istream>,
+        public posix_fd_seekable<posix_file_istream>
+    {
     public:
         explicit posix_file_istream(const std::string& path):
             _fd(open(path.c_str(), O_RDONLY))
@@ -298,31 +304,6 @@ namespace streams {
         }
 
         int fd() { return _fd; }
-
-        //TODO: Create an abstract class for seek/tell.
-        //TODO: Factor seek/tell for posix fd into its own class?
-
-        enum class seek_origin { set, cur, end };
-
-        void seek(std::ptrdiff_t offset, seek_origin origin)
-        {
-            int o = SEEK_SET;
-            if (seek_origin::cur == origin) o = SEEK_CUR;
-            else if (seek_origin::end == origin) o = SEEK_END;
-            auto loc = lseek(_fd, offset, o);
-            if (-1 == loc) {
-                throw std::system_error(errno, std::system_category());
-            }
-        }
-
-        std::ptrdiff_t tell()
-        {
-            auto loc = lseek(_fd, 0, SEEK_CUR);
-            if (-1 == loc) {
-                throw std::system_error(errno, std::system_category());
-            }
-            return loc;
-        }
 
         ~posix_file_istream() { close(_fd); }
 
