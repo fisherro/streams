@@ -119,9 +119,6 @@ Found in examples/example.cpp.
 
 ## Possible expansions
 
-* An abstract class for seekable things?
-* Refactor the seek/tell implementation for POSIX streams into a base class?
-* Refactor the seek/tell implementation for stdio streams into a base class?
 * Input-formatting : scanf :: {fmt} : printf
 * Some quoting/unquoting functions
 
