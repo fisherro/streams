@@ -7,6 +7,7 @@
 #include <fmt/time.h>
 #include "streams/ostream.hpp"
 #include "streams/istream.hpp"
+#include "streams/mmapstream.hpp"
 
 namespace {
     template<typename T>
@@ -247,4 +248,22 @@ TEST_CASE("streams", "[streams]")
             REQUIRE(*line == date);
         }
     }
+
+    SECTION("mmap_*stream") {
+        //Only mmap_isteram implemented so far.
+        //So, we'll sub use stdio_file_ostream for mmap_ostream.
+        const std::string fname("mmap_file_test.txt");
+        std::time_t t(std::time(nullptr));
+        std::string date = fmt::format("{:%Y-%b-%d %T}", *std::localtime(&t));
+        {
+            streams::stdio_file_ostream out(fname);
+            streams::put_string(out, date);
+        }
+        {
+            streams::mmap_istream in(fname);
+            auto line = streams::get_line(in);
+            REQUIRE(*line == date);
+        }
+    }
 }
+

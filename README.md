@@ -50,6 +50,7 @@ A span of bytes can be written to any of the ostream classes via `write()`. The 
 * **stdio\_ostream**: Stdio-based ostream that doesn't own its `FILE*`
 * **stdio\_file\_ostream**: Seekable stdio-based file ostream
 * **file\_ostream**: TBD Typically an alias for a platform-specific file ostream
+* **mmap\_ostream**: TBD
 
 ## Formatted output
 
@@ -76,6 +77,7 @@ A span of bytes can be read from these istream classes with `read()`. The `get()
 * **stdio\_istream**: Stdio-based ostream that doesn't own its `FILE*`
 * **stdio\_file\_istream**: Seekable stdio-based file istream
 * **file\_istream**: TBD Typically an alias for a platform-specific file istream
+* **mmap\_istream**: In progress...
 
 ## Formatted input
 
